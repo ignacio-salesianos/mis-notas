@@ -13,11 +13,47 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div class="app-container">
-        <header class="app-header">
-            <div class="logo">
+    <div class="app-layout">
+        <!-- Sidebar para Carpetas -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
                 <i class="fa-solid fa-feather-pointed"></i>
-                <h1>Notas</h1>
+                <h2>Notas</h2>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="sidebar-nav">
+                    <button class="nav-item active" id="nav-all-notes">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span>Todas mis notas</span>
+                    </button>
+                    <button class="nav-item hidden" id="nav-shared-notes">
+                        <i class="fa-solid fa-users"></i>
+                        <span>Compartidas conmigo</span>
+                    </button>
+                </div>
+                
+                <div class="sidebar-section auth-required hidden" id="folders-section">
+                    <div class="section-header">
+                        <h3>MIS CARPETAS</h3>
+                        <button id="add-folder-btn" class="icon-btn small" aria-label="Nueva carpeta" title="Añadir carpeta">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
+                    </div>
+                    <ul class="folder-list" id="folder-list">
+                        <!-- Las carpetas se renderizan aquí -->
+                    </ul>
+                </div>
+            </div>
+        </aside>
+
+        <div class="app-container">
+        <header class="app-header">
+            <div class="logo-mobile">
+                <button id="mobile-menu-btn" class="icon-btn" aria-label="Abrir menú">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <span id="header-title">Todas mis notas</span>
                 <span id="note-count" class="note-count">0</span>
             </div>
             
@@ -109,6 +145,7 @@
             <span class="shortcut-hint"><kbd>Tab</kbd> Indentar</span>
         </footer>
     </div>
+    </div> <!-- end app-layout -->
 
     <!-- Modal de Edicion -->
     <div id="note-modal" class="modal hidden">
@@ -129,6 +166,12 @@
                     </div>
                 </div>
                 <div class="modal-actions-right">
+                    <div class="folder-selector hidden" id="note-folder-selector" title="Mover a carpeta">
+                        <i class="fa-regular fa-folder"></i>
+                        <select id="note-folder-select">
+                            <option value="">Sin carpeta</option>
+                        </select>
+                    </div>
                     <span id="save-status" class="save-status">Guardado</span>
                     <button id="toggle-preview-btn" class="icon-btn" aria-label="Vista previa" title="Ctrl+P (Previsualizar)">
                         <i class="fa-solid fa-eye"></i>
@@ -136,7 +179,10 @@
                     <button id="fullscreen-btn" class="icon-btn" aria-label="Pantalla completa" title="Pantalla completa">
                         <i class="fa-solid fa-expand"></i>
                     </button>
-                    <button id="copy-note-btn" class="icon-btn" aria-label="Copiar nota" title="Copiar contenido">
+                    <button id="copy-note-link-btn" class="icon-btn" aria-label="Copiar enlace" title="Copiar enlace directo">
+                        <i class="fa-solid fa-link"></i>
+                    </button>
+                    <button id="copy-note-btn" class="icon-btn" aria-label="Copiar contenido" title="Copiar contenido">
                         <i class="fa-regular fa-clipboard"></i>
                     </button>
                     <button id="download-note-btn" class="icon-btn" aria-label="Descargar .md" title="Descargar .md">
@@ -186,6 +232,47 @@
         <i class="fa-solid fa-trash-arrow-up"></i>
         <span id="toast-message">Nota eliminada</span>
         <button id="undo-delete-btn" class="text-btn">Deshacer</button>
+    </div>
+
+    <!-- Modal Nueva Carpeta -->
+    <div id="folder-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content mini">
+            <header class="modal-header">
+                <h3>Nueva Carpeta</h3>
+                <button id="close-folder-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div class="modal-body">
+                <input type="text" id="folder-name-input" class="note-input" placeholder="Nombre de la carpeta" autocomplete="off" maxlength="50" style="font-size: 1.1rem; padding: 0.5rem; width: 100%; border-bottom: 2px solid var(--border-color); margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                    <button id="cancel-folder-btn" class="btn">Cancelar</button>
+                    <button id="save-folder-btn" class="btn primary-btn">Crear</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Compartir Carpeta -->
+    <div id="share-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content mini">
+            <header class="modal-header">
+                <h3>Compartir Carpeta</h3>
+                <button id="close-share-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div class="modal-body">
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Introduce el email del usuario con el que quieres compartir esta carpeta. Ellos también la verán en su cuenta con permisos de lectura y escritura.</p>
+                <input type="email" id="share-email-input" class="note-input" placeholder="usuario@email.com" autocomplete="off" style="font-size: 1.1rem; padding: 0.5rem; width: 100%; border-bottom: 2px solid var(--border-color); margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                    <button id="cancel-share-btn" class="btn">Cancelar</button>
+                    <button id="save-share-btn" class="btn primary-btn">Compartir</button>
+                </div>
+                
+                <div id="shared-users-list" style="margin-top: 1.5rem; max-height: 150px; overflow-y: auto;">
+                    <!-- Lista de usuarios compartidos aquí -->
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

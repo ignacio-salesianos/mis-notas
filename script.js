@@ -59,6 +59,30 @@ document.addEventListener('DOMContentLoaded', () => {
         toastMessage: $('#toast-message'),
         undoBtn: $('#undo-delete-btn'),
         header: $('.app-header'),
+
+        // Folders & Sidebar
+        sidebar: $('#sidebar'),
+        mobileMenuBtn: $('#mobile-menu-btn'),
+        navAllNotes: $('#nav-all-notes'),
+        navSharedNotes: $('#nav-shared-notes'),
+        foldersSection: $('#folders-section'),
+        folderList: $('#folder-list'),
+        addFolderBtn: $('#add-folder-btn'),
+        folderModal: $('#folder-modal'),
+        closeFolderModalBtn: $('#close-folder-modal-btn'),
+        folderNameInput: $('#folder-name-input'),
+        cancelFolderBtn: $('#cancel-folder-btn'),
+        saveFolderBtn: $('#save-folder-btn'),
+
+        shareModal: $('#share-modal'),
+        closeShareModalBtn: $('#close-share-modal-btn'),
+        shareEmailInput: $('#share-email-input'),
+        cancelShareBtn: $('#cancel-share-btn'),
+        saveShareBtn: $('#save-share-btn'),
+        sharedUsersList: $('#shared-users-list'),
+
+        noteFolderSelector: $('#note-folder-selector'),
+        noteFolderSelect: $('#note-folder-select')
     };
 
     // ========================================
@@ -70,11 +94,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = null;
 
     let notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
+    let folders = JSON.parse(localStorage.getItem('minimal_folders')) || [];
     let currentNote = null;
     let deletedNote = null;
     let autoSaveTimer = null;
     let toastTimer = null;
     let sortMode = localStorage.getItem('minimal_sort') || 'date'; // 'date' | 'alpha'
+    let activeFilter = 'all'; // 'all' | 'shared' | folderId
+    let currentShareFolderId = null;
 
     // Init theme
     const savedTheme = localStorage.getItem('minimal_theme') || 'dark';
@@ -99,9 +126,56 @@ document.addEventListener('DOMContentLoaded', () => {
     // EVENT LISTENERS
     // ========================================
 
-    // --- Header ---
+    // --- Header & Sidebar ---
     el.addBtn.addEventListener('click', () => openModal());
     el.themeToggle.addEventListener('click', toggleTheme);
+
+    el.mobileMenuBtn?.addEventListener('click', () => {
+        el.sidebar.classList.toggle('open');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (window.innerWidth <= 768 && el.sidebar.classList.contains('open')) {
+            if (!el.sidebar.contains(e.target) && !el.mobileMenuBtn.contains(e.target)) {
+                el.sidebar.classList.remove('open');
+            }
+        }
+    });
+
+    el.navAllNotes.addEventListener('click', () => {
+        activeFilter = 'all';
+        el.header.querySelector('#header-title').textContent = 'Todas mis notas';
+        updateSidebarActive(el.navAllNotes);
+        renderNotes(el.searchInput.value);
+    });
+
+    el.navSharedNotes?.addEventListener('click', () => {
+        activeFilter = 'shared';
+        el.header.querySelector('#header-title').textContent = 'Compartidas conmigo';
+        updateSidebarActive(el.navSharedNotes);
+        renderNotes(el.searchInput.value);
+    });
+
+    // --- Folder Modals ---
+    el.addFolderBtn.addEventListener('click', () => {
+        el.folderNameInput.value = '';
+        el.folderModal.classList.remove('hidden');
+        setTimeout(() => el.folderNameInput.focus(), 50);
+    });
+
+    el.closeFolderModalBtn.addEventListener('click', () => el.folderModal.classList.add('hidden'));
+    el.cancelFolderBtn.addEventListener('click', () => el.folderModal.classList.add('hidden'));
+    
+    el.saveFolderBtn.addEventListener('click', createFolder);
+    el.folderNameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') createFolder();
+        if (e.key === 'Escape') el.folderModal.classList.add('hidden');
+    });
+
+    // Share Modals basics
+    el.closeShareModalBtn?.addEventListener('click', () => el.shareModal.classList.add('hidden'));
+    el.cancelShareBtn?.addEventListener('click', () => el.shareModal.classList.add('hidden'));
+    el.saveShareBtn?.addEventListener('click', shareFolder);
 
     // --- Scroll Header ---
     window.addEventListener('scroll', () => {
@@ -245,15 +319,52 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPreviewMode) {
             icon.className = 'fa-solid fa-pen';
             
-            const tagsHtml = '';
+            const rawMarkdown = el.bodyInput.value || '*Nada que previsualizar*';
+            let markdown = typeof marked !== 'undefined' ? marked.parse(rawMarkdown) : '<p>Error cargando preview</p>';
+            
+            // Un-disable checkboxes for interactivity
+            markdown = markdown.replace(/<input disabled="" type="checkbox"/g, '<input type="checkbox" class="interactive-checkbox"');
+            markdown = markdown.replace(/<input type="checkbox" disabled=""/g, '<input type="checkbox" class="interactive-checkbox"');
 
-            const markdown = typeof marked !== 'undefined' ? marked.parse(el.bodyInput.value || '*Nada que previsualizar*') : '<p>Error cargando preview</p>';
             el.previewBody.innerHTML = markdown;
+            
+            // Add listeners to checkboxes
+            setTimeout(() => {
+                const checkboxes = el.previewBody.querySelectorAll('.interactive-checkbox');
+                checkboxes.forEach((cb, index) => {
+                    cb.addEventListener('change', (e) => {
+                        toggleMarkdownCheckbox(index, e.target.checked);
+                    });
+                });
+            }, 10);
+            
         } else {
             icon.className = 'fa-solid fa-eye';
             el.bodyInput.focus();
         }
     });
+
+    function toggleMarkdownCheckbox(checkboxIndex, isChecked) {
+        if (!currentNote) return;
+        const bodyContent = el.bodyInput.value;
+        
+        let matchIndex = 0;
+        const newBody = bodyContent.replace(/- \[[ xX]\]/g, (match) => {
+            if (matchIndex === checkboxIndex) {
+                matchIndex++;
+                return isChecked ? '- [x]' : '- [ ]';
+            }
+            matchIndex++;
+            return match;
+        });
+
+        el.bodyInput.value = newBody;
+        currentNote.body = newBody;
+        
+        // Save automatically
+        triggerAutoSave(true);
+        // We do NOT re-render preview immediately to not destroy user focus/scrolling
+    }
 
     if (el.fullscreenBtn) {
         el.fullscreenBtn.addEventListener('click', () => {
@@ -429,10 +540,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentUser || !supabase) return;
         
         try {
+            // RLS automatically filters only notes we own OR notes in folders shared with us
             const { data, error } = await supabase
                 .from('notes')
-                .select('*')
-                .eq('user_id', currentUser.id);
+                .select('*');
                 
             if (error) {
                 console.error('Error fetching from Supabase:', error);
@@ -448,14 +559,276 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: n.body,
                     pinned: n.pinned,
                     color: n.color,
+                    folder_id: n.folder_id,
+                    shared: n.user_id !== currentUser.id,
                     createdAt: new Date(n.created_at).getTime(),
                     updatedAt: new Date(n.updated_at).getTime()
                 }));
                 saveToStorage();
                 renderNotes();
+                if (notes.some(n => n.folder_id && !n.shared)) {
+                    // There are notes in folders, make sure those folders are active in the dropdown 
+                }
             }
         } catch (err) {
             console.error('Network error fetching from Supabase:', err);
+        }
+    }
+
+    async function loadFoldersFromSupabase() {
+        if (!currentUser || !supabase) return;
+        
+        try {
+            // My Folders
+            const { data: myFolders, error: myError } = await supabase
+                .from('folders')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .order('name');
+                
+            if (myError) console.error('Error fetching folders:', myError);
+            else folders = myFolders || [];
+
+            saveFoldersToStorage();
+            renderFoldersSidebar();
+            updateFolderSelects();
+        } catch (err) {
+            console.error('Network error fetching folders:', err);
+        }
+    }
+
+    function saveFoldersToStorage() {
+        localStorage.setItem('minimal_folders', JSON.stringify(folders));
+    }
+
+    async function createFolder() {
+        const name = el.folderNameInput.value.trim();
+        if (!name || !currentUser || !supabase) return;
+
+        el.saveFolderBtn.disabled = true;
+        el.saveFolderBtn.textContent = 'Creando...';
+
+        try {
+            const { data, error } = await supabase
+                .from('folders')
+                .insert([{ user_id: currentUser.id, name }])
+                .select()
+                .single();
+
+            if (error) {
+                console.error('Error creating folder:', error);
+                showToast('Error al crear carpeta');
+            } else if (data) {
+                folders.push(data);
+                folders.sort((a, b) => a.name.localeCompare(b.name));
+                saveFoldersToStorage();
+                renderFoldersSidebar();
+                updateFolderSelects();
+                showToast('Carpeta creada');
+                el.folderModal.classList.add('hidden');
+            }
+        } catch (err) {
+            console.error('Error:', err);
+        } finally {
+            el.saveFolderBtn.disabled = false;
+            el.saveFolderBtn.textContent = 'Crear';
+        }
+    }
+
+    function renderFoldersSidebar() {
+        el.folderList.innerHTML = '';
+        if (!currentUser) return;
+
+        folders.forEach(folder => {
+            const li = document.createElement('li');
+            li.className = `folder-item ${activeFilter === folder.id ? 'active' : ''}`;
+            li.dataset.id = folder.id;
+            
+            li.innerHTML = `
+                <div class="folder-item-content">
+                    <i class="fa-regular fa-folder"></i>
+                    <span class="folder-name-text" title="${folder.name}">${esc(folder.name)}</span>
+                </div>
+                <div class="folder-actions">
+                    <button class="icon-btn small share-folder-btn" title="Compartir" aria-label="Compartir">
+                        <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                    <button class="icon-btn small delete-folder-btn text-danger" title="Eliminar" aria-label="Eliminar">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            `;
+            
+            li.addEventListener('click', (e) => {
+                if (e.target.closest('.share-folder-btn') || e.target.closest('.delete-folder-btn')) return;
+                activeFilter = folder.id;
+                el.header.querySelector('#header-title').textContent = folder.name;
+                updateSidebarActive(li);
+                renderNotes(el.searchInput.value);
+            });
+
+            // Delete folder action
+            const deleteBtn = li.querySelector('.delete-folder-btn');
+            deleteBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if(confirm(`¿Estás seguro de eliminar la carpeta "${folder.name}"? Las notas que contenga también se eliminarán.`)) {
+                    await deleteFolder(folder.id);
+                }
+            });
+
+            // Share folder action
+            const shareBtn = li.querySelector('.share-folder-btn');
+            shareBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openShareModal(folder.id, folder.name);
+            });
+
+            el.folderList.appendChild(li);
+        });
+    }
+
+    async function deleteFolder(id) {
+        if (!currentUser || !supabase) return;
+        try {
+            const { error } = await supabase.from('folders').delete().eq('id', id);
+            if (!error) {
+                folders = folders.filter(f => f.id !== id);
+                notes = notes.filter(n => n.folder_id !== id);
+                saveFoldersToStorage();
+                saveToStorage();
+                if (activeFilter === id) el.navAllNotes.click();
+                else renderFoldersSidebar();
+                renderNotes();
+                showToast('Carpeta eliminada');
+            } else {
+                showToast('Error al eliminar');
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function updateSidebarActive(activeElement) {
+        $$('.nav-item').forEach(el => el.classList.remove('active'));
+        $$('.folder-item').forEach(el => el.classList.remove('active'));
+        if (activeElement) activeElement.classList.add('active');
+        if (window.innerWidth <= 768) el.sidebar.classList.remove('open');
+    }
+
+    function updateFolderSelects() {
+        // Clear except first "Sin carpeta"
+        while (el.noteFolderSelect.options.length > 1) {
+            el.noteFolderSelect.remove(1);
+        }
+        
+        folders.forEach(f => {
+            const option = document.createElement('option');
+            option.value = f.id;
+            option.textContent = f.name;
+            el.noteFolderSelect.appendChild(option);
+        });
+    }
+
+    // --- Share Logic ---
+    async function openShareModal(folderId, folderName) {
+        currentShareFolderId = folderId;
+        el.shareEmailInput.value = '';
+        el.shareModal.querySelector('h3').textContent = `Compartir "${folderName}"`;
+        el.sharedUsersList.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">Cargando usuarios...</p>';
+        el.shareModal.classList.remove('hidden');
+
+        try {
+            const { data, error } = await supabase
+                .from('shared_folders')
+                .select('shared_with_email')
+                .eq('folder_id', folderId);
+
+            if (error) throw error;
+            
+            el.sharedUsersList.innerHTML = '';
+            if (data && data.length > 0) {
+                data.forEach(share => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.justifyContent = 'space-between';
+                    row.style.alignItems = 'center';
+                    row.style.padding = '0.5rem';
+                    row.style.borderBottom = '1px solid var(--border-color)';
+                    row.style.fontSize = '0.9rem';
+                    
+                    row.innerHTML = `
+                        <span>${esc(share.shared_with_email)}</span>
+                        <button class="icon-btn small text-danger remove-share-btn" title="Revocar acceso">
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    `;
+                    
+                    row.querySelector('.remove-share-btn').addEventListener('click', () => {
+                        removeShare(folderId, share.shared_with_email, row);
+                    });
+                    
+                    el.sharedUsersList.appendChild(row);
+                });
+            } else {
+                el.sharedUsersList.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">Nadie tiene acceso aún.</p>';
+            }
+        } catch (err) {
+            console.error(err);
+            el.sharedUsersList.innerHTML = '<p style="color:var(--text-danger);font-size:0.8rem">Error al cargar usuarios compartidos.</p>';
+        }
+    }
+
+    async function shareFolder() {
+        if (!currentShareFolderId || !supabase) return;
+        const email = el.shareEmailInput.value.trim().toLowerCase();
+        if (!email || !email.includes('@')) {
+            showToast('Email inválido');
+            return;
+        }
+
+        el.saveShareBtn.disabled = true;
+        try {
+            const { error } = await supabase
+                .from('shared_folders')
+                .insert([{ folder_id: currentShareFolderId, shared_with_email: email }]);
+
+            if (error) {
+                if(error.code === '23505') showToast('Usuario ya tiene acceso');
+                else showToast('Error al compartir');
+            } else {
+                showToast(`Carpeta compartida con ${email}`);
+                el.shareEmailInput.value = '';
+                // Reload list
+                openShareModal(currentShareFolderId, el.shareModal.querySelector('h3').textContent.replace('Compartir "', '').replace('"', ''));
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            el.saveShareBtn.disabled = false;
+        }
+    }
+
+    async function removeShare(folderId, email, rowElement) {
+        if (!supabase) return;
+        rowElement.style.opacity = '0.5';
+        try {
+            const { error } = await supabase
+                .from('shared_folders')
+                .delete()
+                .match({ folder_id: folderId, shared_with_email: email });
+
+            if (!error) {
+                rowElement.remove();
+                if (el.sharedUsersList.children.length === 0) {
+                    el.sharedUsersList.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem">Nadie tiene acceso aún.</p>';
+                }
+            } else {
+                showToast('Error al revocar acceso');
+                rowElement.style.opacity = '1';
+            }
+        } catch (err) {
+            console.error(err);
+            rowElement.style.opacity = '1';
         }
     }
 
@@ -480,19 +853,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const localUserNotes = localStorage.getItem(`minimal_notes_${currentUser.id}`);
             if (localUserNotes) {
                 notes = JSON.parse(localUserNotes);
-                renderNotes();
             } else {
                 notes = [];
             }
             
-            loadNotesFromSupabase();
+            el.foldersSection.classList.remove('hidden');
+            el.noteFolderSelector.classList.remove('hidden');
+            
+            // Cargar datos
+            Promise.all([
+                loadFoldersFromSupabase(),
+                loadNotesFromSupabase()
+            ]).then(() => {
+                renderFoldersSidebar();
+                renderNotes();
+            });
+            
         } else {
             el.loginGoogleBtn.style.display = 'flex';
             el.userProfileContainer?.classList.add('hidden');
             el.userDropdownMenu?.classList.remove('show');
             
+            el.foldersSection.classList.add('hidden');
+            el.noteFolderSelector.classList.add('hidden');
+            activeFilter = 'all';
+            updateSidebarActive(el.navAllNotes);
+            
             // Volver a notas en local storage anónimo
             notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
+            folders = [];
+            renderFoldersSidebar();
             renderNotes();
         }
     }
@@ -506,8 +896,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const term = searchTerm.trim().toLowerCase();
 
         let filtered = notes;
+
+        // Folder filtering
+        if (activeFilter === 'shared') {
+            filtered = notes.filter(n => n.shared);
+        } else if (activeFilter !== 'all') {
+            filtered = notes.filter(n => n.folder_id === activeFilter);
+        }
+
         if (term) {
-            filtered = notes.filter(n =>
+            filtered = filtered.filter(n =>
                 (n.title || '').toLowerCase().includes(term) ||
                 (n.body || '').toLowerCase().includes(term) ||
                 (n.tags && n.tags.some(t => t.toLowerCase().includes(term.replace('#',''))))
@@ -608,6 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let bodyHtml;
             if (typeof marked !== 'undefined' && note.body) {
                 bodyHtml = marked.parse(note.body);
+                // For preview cards, we generally want them disabled so they don't capture clicks
             } else {
                 bodyHtml = `<p>${esc(note.body || '')}</p>`;
             }
@@ -656,6 +1055,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el.titleInput.value = currentNote.title || '';
         el.tagsInput.value = Array.isArray(currentNote.tags) ? currentNote.tags.join(', ') : '';
         el.bodyInput.value = currentNote.body || '';
+        el.noteFolderSelect.value = currentNote.folder_id || (activeFilter !== 'all' && activeFilter !== 'shared' ? activeFilter : '');
         el.pinBtn.classList.toggle('active', currentNote.pinned);
         setActiveColorDot(currentNote.color);
         el.saveStatus.classList.remove('visible');
@@ -710,6 +1110,9 @@ document.addEventListener('DOMContentLoaded', () => {
             currentNote.tags = [...new Set(rawTags)];
             currentNote.body = el.bodyInput.value;
             currentNote.updatedAt = Date.now();
+            
+            // Parse Folder
+            currentNote.folder_id = el.noteFolderSelect.value || null;
 
         const idx = notes.findIndex(n => n.id === currentNote.id);
         if (idx > -1) notes[idx] = { ...currentNote };
