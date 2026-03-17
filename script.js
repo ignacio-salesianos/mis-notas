@@ -26,8 +26,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         authContainer: $('#auth-container'),
         loginGoogleBtn: $('#login-google-btn'),
+        userProfileContainer: $('#user-profile-container'),
         userProfile: $('#user-profile'),
         userAvatar: $('#user-avatar'),
+        userName: $('#user-name'),
+        userDropdownMenu: $('#user-dropdown-menu'),
+        dropdownUserName: $('#dropdown-user-name'),
+        dropdownUserEmail: $('#dropdown-user-email'),
         logoutBtn: $('#logout-btn'),
 
         modal: $('#note-modal'),
@@ -144,11 +149,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- User Profile Dropdown ---
+    if (el.userProfile) {
+        el.userProfile.addEventListener('click', (e) => {
+            e.stopPropagation();
+            el.userDropdownMenu.classList.toggle('show');
+        });
+    }
+    
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#user-profile-container')) {
+            el.userDropdownMenu?.classList.remove('show');
+        }
+    });
+
     if (el.logoutBtn) {
         el.logoutBtn.addEventListener('click', async () => {
             if (!supabase) return;
             await supabase.auth.signOut();
             notes = [];
+            el.userDropdownMenu.classList.remove('show');
             saveToStorage();
             renderNotes();
         });
@@ -444,9 +464,17 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser = session?.user || null;
         
         if (currentUser) {
-            el.loginGoogleBtn.classList.add('hidden');
+            el.loginGoogleBtn.style.display = 'none';
+            el.userProfileContainer?.classList.remove('hidden');
             el.userProfile.classList.remove('hidden');
-            el.userAvatar.src = currentUser.user_metadata?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp';
+            
+            const avatarUrl = currentUser.user_metadata?.avatar_url || 'https://www.gravatar.com/avatar/?d=mp';
+            const fullName = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Usuario';
+            
+            el.userAvatar.src = avatarUrl;
+            if (el.userName) el.userName.textContent = fullName;
+            if (el.dropdownUserName) el.dropdownUserName.textContent = fullName;
+            if (el.dropdownUserEmail) el.dropdownUserEmail.textContent = currentUser.email;
             
             // Cargar local primero, luego sincronizar
             const localUserNotes = localStorage.getItem(`minimal_notes_${currentUser.id}`);
@@ -459,8 +487,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             loadNotesFromSupabase();
         } else {
-            el.loginGoogleBtn.classList.remove('hidden');
-            el.userProfile.classList.add('hidden');
+            el.loginGoogleBtn.style.display = 'flex';
+            el.userProfileContainer?.classList.add('hidden');
+            el.userDropdownMenu?.classList.remove('show');
             
             // Volver a notas en local storage anónimo
             notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];

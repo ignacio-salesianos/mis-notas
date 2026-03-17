@@ -62,11 +62,22 @@
                         <i class="fa-brands fa-google"></i>
                         <span>Acceder</span>
                     </button>
-                    <div id="user-profile" class="user-profile hidden">
-                        <img id="user-avatar" src="" alt="Avatar" class="user-avatar">
-                        <button id="logout-btn" class="icon-btn text-danger" aria-label="Cerrar sesión" title="Cerrar sesión">
-                            <i class="fa-solid fa-right-from-bracket"></i>
-                        </button>
+                    
+                    <div class="dropdown" id="user-profile-container">
+                        <div id="user-profile" class="user-profile hidden" aria-label="Perfil de usuario">
+                            <img id="user-avatar" src="" alt="Avatar" class="user-avatar">
+                            <span id="user-name" class="user-name">Usuario</span>
+                        </div>
+                        
+                        <div id="user-dropdown-menu" class="user-dropdown">
+                            <div class="user-info-header">
+                                <strong id="dropdown-user-name">Usuario</strong>
+                                <small id="dropdown-user-email">correo@ejemplo.com</small>
+                            </div>
+                            <button id="logout-btn" class="dropdown-item text-danger">
+                                <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <button id="add-note-btn" class="btn primary-btn" title="Ctrl+N">
