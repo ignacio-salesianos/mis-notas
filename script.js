@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let sortMode = localStorage.getItem('minimal_sort') || 'date'; // 'date' | 'alpha'
     let activeFilter = 'all'; // 'all' | 'shared' | folderId
     let currentShareFolderId = null;
+    let realtimeChannel = null;
 
     // Init theme
     const savedTheme = localStorage.getItem('minimal_theme') || 'dark';
@@ -240,6 +241,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el.logoutBtn) {
         el.logoutBtn.addEventListener('click', async () => {
             if (!supabase) return;
+            if (realtimeChannel) {
+                supabase.removeChannel(realtimeChannel);
+                realtimeChannel = null;
+            }
             await supabase.auth.signOut();
             notes = [];
             el.userDropdownMenu.classList.remove('show');
@@ -840,6 +845,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Auth handlers
+    function setupRealtimeSubscriptions() {
+        if (!currentUser || !supabase) return;
+        
+        if (realtimeChannel) {
+            supabase.removeChannel(realtimeChannel);
+        }
+
+        realtimeChannel = supabase.channel('custom-all-channel')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'shared_folders' },
+                () => {
+                    console.log('Cambio en shared_folders detectado');
+                    Promise.all([
+                        loadFoldersFromSupabase(),
+                        loadNotesFromSupabase()
+                    ]);
+                }
+            )
+            .subscribe();
+    }
+
     function handleSession(session) {
         currentUser = session?.user || null;
         
@@ -874,6 +901,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ]).then(() => {
                 renderFoldersSidebar();
                 renderNotes();
+                setupRealtimeSubscriptions();
             });
             
         } else {
@@ -885,6 +913,11 @@ document.addEventListener('DOMContentLoaded', () => {
             el.noteFolderSelector.classList.add('hidden');
             activeFilter = 'all';
             updateSidebarActive(el.navAllNotes);
+            
+            if (realtimeChannel) {
+                supabase.removeChannel(realtimeChannel);
+                realtimeChannel = null;
+            }
             
             // Volver a notas en local storage anónimo
             notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
