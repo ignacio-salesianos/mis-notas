@@ -681,19 +681,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Delete folder action
             const deleteBtn = li.querySelector('.delete-folder-btn');
-            deleteBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                if(confirm(`¿Estás seguro de eliminar la carpeta "${folder.name}"? Las notas que contenga también se eliminarán.`)) {
-                    await deleteFolder(folder.id);
-                }
-            });
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if(confirm(`¿Estás seguro de eliminar la carpeta "${folder.name}"? Las notas que contenga también se eliminarán.`)) {
+                        await deleteFolder(folder.id);
+                    }
+                });
+            }
 
             // Share folder action
             const shareBtn = li.querySelector('.share-folder-btn');
-            shareBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openShareModal(folder.id, folder.name);
-            });
+            if (shareBtn) {
+                shareBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openShareModal(folder.id, folder.name);
+                });
+            }
 
             el.folderList.appendChild(li);
         });
