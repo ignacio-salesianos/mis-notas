@@ -579,11 +579,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentUser || !supabase) return;
         
         try {
-            // My Folders
+            // Fetch all folders we have access to (both owned and shared via RLS)
             const { data: myFolders, error: myError } = await supabase
                 .from('folders')
                 .select('*')
-                .eq('user_id', currentUser.id)
                 .order('name');
                 
             if (myError) console.error('Error fetching folders:', myError);
@@ -640,15 +639,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentUser) return;
 
         folders.forEach(folder => {
+            const isOwner = folder.user_id === currentUser.id;
             const li = document.createElement('li');
             li.className = `folder-item ${activeFilter === folder.id ? 'active' : ''}`;
             li.dataset.id = folder.id;
             
-            li.innerHTML = `
-                <div class="folder-item-content">
-                    <i class="fa-regular fa-folder"></i>
-                    <span class="folder-name-text" title="${folder.name}">${esc(folder.name)}</span>
-                </div>
+            let actionsHtml = '';
+            if (isOwner) {
+                actionsHtml = `
                 <div class="folder-actions">
                     <button class="icon-btn small share-folder-btn" title="Compartir" aria-label="Compartir">
                         <i class="fa-solid fa-user-plus"></i>
@@ -657,6 +655,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </div>
+                `;
+            }
+
+            li.innerHTML = `
+                <div class="folder-item-content">
+                    <i class="fa-${isOwner ? 'regular fa-folder' : 'solid fa-folder-user'}"></i>
+                    <span class="folder-name-text" title="${folder.name}">${esc(folder.name)}</span>
+                </div>
+                ${actionsHtml}
             `;
             
             li.addEventListener('click', (e) => {
