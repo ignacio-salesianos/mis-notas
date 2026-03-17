@@ -209,9 +209,12 @@
                     <button type="button" class="toolbar-btn" data-action="checklist" title="Checklist (- [ ])"><i class="fa-solid fa-list-check"></i></button>
                     <button type="button" class="toolbar-btn" data-action="code" title="Código (``` ```)"><i class="fa-solid fa-code"></i></button>
                     <div class="toolbar-divider" style="width: 1px; height: 20px; background: var(--border-color); margin: 0 4px;"></div>
-                    <button type="button" class="toolbar-btn ai-btn magic-text-btn" data-action="ai-order" title="Ordenar con IA"><i class="fa-solid fa-list-ol"></i> Ordenar IA</button>
-                    <button type="button" class="toolbar-btn ai-btn magic-text-btn" data-action="ai-summarize" title="Resumir con IA"><i class="fa-solid fa-compress"></i> Resumir IA</button>
-                    <button type="button" class="toolbar-btn ai-btn magic-text-btn" data-action="ai-extend" title="Extender con IA"><i class="fa-solid fa-expand"></i> Extender IA</button>
+                    <div class="ai-toolbar-group">
+                        <span class="ai-group-label" title="Herramientas IA"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
+                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-order" title="Ordenar lista (IA)"><i class="fa-solid fa-list-ol"></i></button>
+                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-summarize" title="Resumir nota (IA)"><i class="fa-solid fa-compress"></i></button>
+                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-extend" title="Extender nota (IA)"><i class="fa-solid fa-expand"></i></button>
+                    </div>
                 </div>
 
                 <textarea id="note-body-input" class="note-input body-input" placeholder="Comienza a escribir..."></textarea>
