@@ -85,7 +85,13 @@ document.addEventListener('DOMContentLoaded', () => {
         sharedUsersList: $('#shared-users-list'),
 
         noteFolderSelector: $('#note-folder-selector'),
-        noteFolderSelect: $('#note-folder-select')
+        noteFolderSelect: $('#note-folder-select'),
+
+        aiModal: $('#ai-modal'),
+        closeAiModalBtn: $('#close-ai-modal-btn'),
+        cancelAiBtn: $('#cancel-ai-btn'),
+        saveAiBtn: $('#save-ai-btn'),
+        aiTopicInput: $('#ai-topic-input')
     };
 
     // ========================================
@@ -133,13 +139,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Header & Sidebar ---
     el.addBtn.addEventListener('click', () => openModal());
     if (el.addAiBtn) {
-        el.addAiBtn.addEventListener('click', async () => {
-            const topic = prompt("¿Sobre qué quieres que trate la nota?");
+        el.addAiBtn.addEventListener('click', () => {
+            el.aiTopicInput.value = '';
+            el.aiModal.classList.remove('hidden');
+            setTimeout(() => el.aiTopicInput.focus(), 50);
+        });
+    }
+
+    if (el.closeAiModalBtn) {
+        el.closeAiModalBtn.addEventListener('click', () => el.aiModal.classList.add('hidden'));
+        el.cancelAiBtn.addEventListener('click', () => el.aiModal.classList.add('hidden'));
+        
+        el.saveAiBtn.addEventListener('click', async () => {
+            const topic = el.aiTopicInput.value.trim();
             if (!topic) return;
-            
-            showToast('Generando nota con IA...');
-            const aiContent = await generateAIContent(`Crea una nota clara y estructurada sobre: ${topic}. Usa formato markdown, pero NO incluyas un título grande de primer nivel al inicio (yo ya pongo el título en otra parte).`);
-            
+
+            el.saveAiBtn.disabled = true;
+            el.saveAiBtn.innerHTML = 'Generando... <i class="fa-solid fa-spinner fa-spin"></i>';
+            showToast('Generando nota...');
+
+            const aiContent = await generateAIContent(`Crea una nota clara y estructurada sobre: ${topic}. Responde ÚNICAMENTE con el contenido solicitado. No incluyas saludos, presentaciones, ni bloques de código markdown (\`\`\`). Usa formato markdown para la estructura interna, pero NO incluyas un título grande de primer nivel al inicio.`);
+
             if (aiContent) {
                 const newNote = {
                     id: generateId(),
@@ -157,10 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (currentUser) syncNoteToSupabase(newNote);
                 renderNotes(el.searchInput.value);
                 hideToast();
+                
+                el.aiModal.classList.add('hidden');
                 openModal(newNote);
             } else {
                 showToast('Error al generar la nota');
             }
+            
+            el.saveAiBtn.disabled = false;
+            el.saveAiBtn.innerHTML = 'Generar <i class="fa-solid fa-wand-magic-sparkles"></i>';
         });
     }
     el.themeToggle.addEventListener('click', toggleTheme);
@@ -472,12 +497,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Procesando con IA...');
                 
                 let prompt = '';
+                const baseInstructions = "Responde ÚNICAMENTE con el contenido solicitado. No incluyas saludos, explicaciones extras, ni bloques de código envolventes tipo ```markdown o ```.";
                 if (action === 'ai-order') {
-                    prompt = `Organiza el siguiente texto en una lista de puntos clave clara y estructurada, descartando relleno innecesario. Responde SÓLO con el texto formateado en markdown:\n\n${textToProcess}`;
+                    prompt = `Organiza el siguiente texto en una lista de puntos clave clara y estructurada, descartando relleno innecesario. ${baseInstructions}:\n\n${textToProcess}`;
                 } else if (action === 'ai-summarize') {
-                    prompt = `Resume el siguiente texto de la forma más concisa y minimalista posible, conservando la idea principal. Responde SÓLO con el resumen:\n\n${textToProcess}`;
+                    prompt = `Resume el siguiente texto de la forma más concisa y minimalista posible, conservando la idea principal. ${baseInstructions}:\n\n${textToProcess}`;
                 } else if (action === 'ai-extend') {
-                    prompt = `Extiende y desarrolla detalladamente la siguiente idea o texto, añadiendo contexto, ejemplos o explicaciones relevantes. Responde SÓLO con el texto ampliado en formato markdown:\n\n${textToProcess}`;
+                    prompt = `Extiende y desarrolla detalladamente la siguiente idea o texto, añadiendo contexto, ejemplos o explicaciones relevantes. ${baseInstructions}:\n\n${textToProcess}`;
                 }
 
                 const result = await generateAIContent(prompt);
@@ -1175,18 +1201,46 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCounts();
         updateDateInfo();
 
-        // Reset preview
-        isPreviewMode = false;
-        el.bodyInput.classList.remove('hidden');
-        el.previewBody.classList.add('hidden');
-        el.toolbar.classList.remove('hidden');
-        el.togglePreviewBtn.querySelector('i').className = 'fa-solid fa-eye';
+        // Setup initial mode: view if existing note, edit if new note
+        isPreviewMode = !!note;
+        
+        el.bodyInput.classList.toggle('hidden', isPreviewMode);
+        el.previewBody.classList.toggle('hidden', !isPreviewMode);
+        el.toolbar.classList.toggle('hidden', isPreviewMode);
+        
+        const icon = el.togglePreviewBtn.querySelector('i');
+        if (isPreviewMode) {
+            icon.className = 'fa-solid fa-pen';
+            
+            const rawMarkdown = el.bodyInput.value || '*Nada que previsualizar*';
+            let markdown = typeof marked !== 'undefined' ? marked.parse(rawMarkdown) : '<p>Error cargando preview</p>';
+            
+            // Un-disable checkboxes for interactivity
+            markdown = markdown.replace(/<input disabled="" type="checkbox"/g, '<input type="checkbox" class="interactive-checkbox"');
+            markdown = markdown.replace(/<input type="checkbox" disabled=""/g, '<input type="checkbox" class="interactive-checkbox"');
+
+            el.previewBody.innerHTML = markdown;
+            
+            // Add listeners to checkboxes
+            setTimeout(() => {
+                const checkboxes = el.previewBody.querySelectorAll('.interactive-checkbox');
+                checkboxes.forEach((cb, index) => {
+                    cb.addEventListener('change', (e) => {
+                        toggleMarkdownCheckbox(index, e.target.checked);
+                    });
+                });
+            }, 10);
+        } else {
+            icon.className = 'fa-solid fa-eye';
+        }
 
         el.modal.classList.remove('hidden');
 
         setTimeout(() => {
-            if (!currentNote.title) el.titleInput.focus();
-            else { el.bodyInput.focus(); el.bodyInput.selectionStart = el.bodyInput.value.length; }
+            if (!isPreviewMode) {
+                if (!currentNote.title) el.titleInput.focus();
+                else { el.bodyInput.focus(); el.bodyInput.selectionStart = el.bodyInput.value.length; }
+            }
         }, 60);
     }
 
@@ -1429,46 +1483,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return d.innerHTML;
     }
 
-    // AI Generation global function
+    // AI Generation global function using API
     async function generateAIContent(prompt) {
-        const apiKey = 'AIzaSyALnXifCXMiFHG_12wtBMBX1shEgUPIgQQ';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key=${apiKey}`;
-
         try {
-            const response = await fetch(url, {
+            const response = await fetch('/api/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7 }
-                })
+                body: JSON.stringify({ prompt })
             });
 
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+
             const data = await response.json();
-            if (data.candidates && data.candidates[0].content.parts[0].text) {
-                return data.candidates[0].content.parts[0].text.trim();
+            if (data.text) {
+                let result = data.text.trim();
+                if (result.startsWith('```markdown')) result = result.substring(11).trim();
+                else if (result.startsWith('```')) result = result.substring(3).trim();
+                if (result.endsWith('```')) result = result.substring(0, result.length - 3).trim();
+                return result;
             }
             throw new Error('No content in response');
         } catch (error) {
             console.error('Error generating AI content:', error);
-            // Fallback for Gemini if Gemma is not loaded into the endpoint yet
-            try {
-                const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-                const fallbackResponse = await fetch(fallbackUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: { temperature: 0.7 }
-                    })
-                });
-                const fData = await fallbackResponse.json();
-                if (fData.candidates && fData.candidates[0].content.parts[0].text) {
-                    return fData.candidates[0].content.parts[0].text.trim();
-                }
-            } catch (e) {
-                console.error('Fallback failed:', e);
-            }
             return null;
         }
     }
