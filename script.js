@@ -11,8 +11,10 @@ document.addEventListener('DOMContentLoaded', () => {
         emptyState: $('#empty-state'),
         noResults: $('#no-results'),
         searchInput: $('#search-input'),
+        searchInput: $('#search-input'),
         clearSearch: $('#clear-search'),
         addBtn: $('#add-note-btn'),
+        addAiBtn: $('#add-note-ai-btn'),
         themeToggle: $('#theme-toggle'),
         noteCount: $('#note-count'),
 
@@ -39,13 +41,14 @@ document.addEventListener('DOMContentLoaded', () => {
         closeModalBtn: $('#close-modal-btn'),
         titleInput: $('#note-title-input'),
         tagsInput: $('#note-tags-input'),
+        tagsInput: $('#note-tags-input'),
         toolbar: $('#note-toolbar'),
-        toolbarBtns: $$('.toolbar-btn'),
+        toolbarBtns: $$('.toolbar-btn:not(.ai-btn)'),
+        aiBtns: $$('.ai-btn'),
         bodyInput: $('#note-body-input'),
         previewBody: $('#note-preview'),
         togglePreviewBtn: $('#toggle-preview-btn'),
         fullscreenBtn: $('#fullscreen-btn'),
-        copyNoteBtn: $('#copy-note-btn'),
         downloadNoteBtn: $('#download-note-btn'),
         pinBtn: $('#pin-note-btn'),
         duplicateBtn: $('#duplicate-note-btn'),
@@ -129,6 +132,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Header & Sidebar ---
     el.addBtn.addEventListener('click', () => openModal());
+    if (el.addAiBtn) {
+        el.addAiBtn.addEventListener('click', async () => {
+            const topic = prompt("¿Sobre qué quieres que trate la nota?");
+            if (!topic) return;
+            
+            showToast('Generando nota con IA...');
+            const aiContent = await generateAIContent(`Crea una nota clara y estructurada sobre: ${topic}. Usa formato markdown, pero NO incluyas un título grande de primer nivel al inicio (yo ya pongo el título en otra parte).`);
+            
+            if (aiContent) {
+                const newNote = {
+                    id: generateId(),
+                    title: topic.charAt(0).toUpperCase() + topic.slice(1),
+                    tags: ['IA'],
+                    body: aiContent,
+                    pinned: false,
+                    color: 'default',
+                    folder_id: activeFilter !== 'all' && activeFilter !== 'shared' ? activeFilter : null,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                notes.push(newNote);
+                saveToStorage();
+                if (currentUser) syncNoteToSupabase(newNote);
+                renderNotes(el.searchInput.value);
+                hideToast();
+                openModal(newNote);
+            } else {
+                showToast('Error al generar la nota');
+            }
+        });
+    }
     el.themeToggle.addEventListener('click', toggleTheme);
 
     el.mobileMenuBtn?.addEventListener('click', () => {
@@ -417,13 +451,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    el.copyNoteBtn.addEventListener('click', () => {
-        if (!currentNote) return;
-        const content = `${el.titleInput.value ? '# ' + el.titleInput.value + '\\n\\n' : ''}${el.bodyInput.value}`;
-        navigator.clipboard.writeText(content).then(() => {
-            showToast('Contenido copiado');
+    // AI Actions
+    if (el.aiBtns) {
+        el.aiBtns.forEach(btn => {
+            btn.addEventListener('click', async () => {
+                if (!currentNote) return;
+                const action = btn.dataset.action;
+                const start = el.bodyInput.selectionStart;
+                const end = el.bodyInput.selectionEnd;
+                const fullText = el.bodyInput.value;
+                const selectedText = fullText.substring(start, end);
+                
+                const textToProcess = selectedText || fullText;
+                
+                if (!textToProcess.trim()) {
+                    showToast('Escribe algo primero');
+                    return;
+                }
+
+                showToast('Procesando con IA...');
+                
+                let prompt = '';
+                if (action === 'ai-order') {
+                    prompt = `Organiza el siguiente texto en una lista de puntos clave clara y estructurada, descartando relleno innecesario. Responde SÓLO con el texto formateado en markdown:\n\n${textToProcess}`;
+                } else if (action === 'ai-summarize') {
+                    prompt = `Resume el siguiente texto de la forma más concisa y minimalista posible, conservando la idea principal. Responde SÓLO con el resumen:\n\n${textToProcess}`;
+                } else if (action === 'ai-extend') {
+                    prompt = `Extiende y desarrolla detalladamente la siguiente idea o texto, añadiendo contexto, ejemplos o explicaciones relevantes. Responde SÓLO con el texto ampliado en formato markdown:\n\n${textToProcess}`;
+                }
+
+                const result = await generateAIContent(prompt);
+
+                if (result) {
+                    if (selectedText) {
+                        el.bodyInput.value = fullText.substring(0, start) + result + fullText.substring(end);
+                    } else {
+                        el.bodyInput.value = result;
+                    }
+                    triggerAutoSave();
+                    updateCounts();
+                    hideToast();
+                } else {
+                    showToast('Error con la IA');
+                }
+            });
         });
-    });
+    }
 
     el.downloadNoteBtn.addEventListener('click', () => {
         if (!currentNote) return;
@@ -448,45 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Undo ---
     el.undoBtn.addEventListener('click', () => {
-        if (!deletedNote) return;
-        notes.push(deletedNote);
-        saveToStorage();
-        if (currentUser) syncNoteToSupabase(deletedNote);
-        deletedNote = null;
-        renderNotes(el.searchInput.value);
-        hideToast();
-    });
-
-    // --- Keyboard Shortcuts ---
-    document.addEventListener('keydown', (e) => {
-        // Escape -> close modal
-        if (e.key === 'Escape' && !el.modal.classList.contains('hidden')) {
-            closeModal();
-            return;
-        }
-        // Ctrl+N -> new note
-        if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-            e.preventDefault();
-            openModal();
-            return;
-        }
-        if (e.key === 'p' && (e.ctrlKey || e.metaKey) && !el.modal.classList.contains('hidden')) {
-            e.preventDefault();
-            el.togglePreviewBtn.click();
-            return;
-        }
-        // Ctrl+S -> save and close
-        if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            if (!el.modal.classList.contains('hidden')) closeModal();
-            return;
-        }
-        // Focus search with '/'
-        if (e.key === '/' && el.modal.classList.contains('hidden') && document.activeElement.tagName !== 'INPUT') {
-            e.preventDefault();
-            el.searchInput.focus();
-        }
-    });
 
     // ========================================
     // CORE FUNCTIONS
@@ -967,6 +1001,9 @@ document.addEventListener('DOMContentLoaded', () => {
             filtered = notes.filter(n => n.shared);
         } else if (activeFilter !== 'all') {
             filtered = notes.filter(n => n.folder_id === activeFilter);
+        } else {
+            // "Todas mis notas": Only show notes WITHOUT a folder and that are NOT shared
+            filtered = notes.filter(n => !n.folder_id && !n.shared);
         }
 
         if (term) {
@@ -1381,9 +1418,55 @@ document.addEventListener('DOMContentLoaded', () => {
         return d.innerHTML;
     }
 
+    // AI Generation global function
+    async function generateAIContent(prompt) {
+        const apiKey = 'AIzaSyALnXifCXMiFHG_12wtBMBX1shEgUPIgQQ';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key=${apiKey}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.7 }
+                })
+            });
+
+            const data = await response.json();
+            if (data.candidates && data.candidates[0].content.parts[0].text) {
+                return data.candidates[0].content.parts[0].text.trim();
+            }
+            throw new Error('No content in response');
+        } catch (error) {
+            console.error('Error generating AI content:', error);
+            // Fallback for Gemini if Gemma is not loaded into the endpoint yet
+            try {
+                const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+                const fallbackResponse = await fetch(fallbackUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.7 }
+                    })
+                });
+                const fData = await fallbackResponse.json();
+                if (fData.candidates && fData.candidates[0].content.parts[0].text) {
+                    return fData.candidates[0].content.parts[0].text.trim();
+                }
+            } catch (e) {
+                console.error('Fallback failed:', e);
+            }
+            return null;
+        }
+    }
+
+
     // Init sort buttons UI
     el.sortDateBtn.classList.toggle('active', sortMode === 'date');
     el.sortAlphaBtn.classList.toggle('active', sortMode === 'alpha');
+    
     
     // Global functions for inline HTML events
     window.copyCodeFromButton = function(btn) {

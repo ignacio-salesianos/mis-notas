@@ -116,10 +116,16 @@
                         </div>
                     </div>
                 </div>
-                <button id="add-note-btn" class="btn primary-btn" title="Ctrl+N">
-                    <i class="fa-solid fa-plus"></i>
-                    <span>Nueva Nota</span>
-                </button>
+                <div class="main-add-actions" style="display:flex; gap: 0.5rem; align-items: center;">
+                    <button id="add-note-ai-btn" class="btn" style="background: linear-gradient(135deg, rgba(88, 101, 242, 0.1) 0%, rgba(162, 102, 235, 0.1) 100%); color: var(--color-purple); border: 1px solid rgba(162,102,235,0.3);" title="Generar con IA">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Generar con IA</span>
+                    </button>
+                    <button id="add-note-btn" class="btn primary-btn" title="Nueva Nota">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Nueva Nota</span>
+                    </button>
+                </div>
             </div>
         </header>
 
@@ -140,9 +146,6 @@
         </main>
 
         <footer class="app-footer">
-            <span class="shortcut-hint"><kbd>Ctrl</kbd><kbd>N</kbd> Nueva</span>
-            <span class="shortcut-hint"><kbd>Esc</kbd> Cerrar</span>
-            <span class="shortcut-hint"><kbd>Tab</kbd> Indentar</span>
         </footer>
     </div>
     </div> <!-- end app-layout -->
@@ -179,12 +182,6 @@
                     <button id="fullscreen-btn" class="icon-btn" aria-label="Pantalla completa" title="Pantalla completa">
                         <i class="fa-solid fa-expand"></i>
                     </button>
-                    <button id="copy-note-link-btn" class="icon-btn" aria-label="Copiar enlace" title="Copiar enlace directo">
-                        <i class="fa-solid fa-link"></i>
-                    </button>
-                    <button id="copy-note-btn" class="icon-btn" aria-label="Copiar contenido" title="Copiar contenido">
-                        <i class="fa-regular fa-clipboard"></i>
-                    </button>
                     <button id="download-note-btn" class="icon-btn" aria-label="Descargar .md" title="Descargar .md">
                         <i class="fa-solid fa-file-arrow-down"></i>
                     </button>
@@ -211,6 +208,10 @@
                     <button type="button" class="toolbar-btn" data-action="list" title="Lista (- )"><i class="fa-solid fa-list-ul"></i></button>
                     <button type="button" class="toolbar-btn" data-action="checklist" title="Checklist (- [ ])"><i class="fa-solid fa-list-check"></i></button>
                     <button type="button" class="toolbar-btn" data-action="code" title="Código (``` ```)"><i class="fa-solid fa-code"></i></button>
+                    <div class="toolbar-divider" style="width: 1px; height: 20px; background: var(--border-color); margin: 0 4px;"></div>
+                    <button type="button" class="toolbar-btn ai-btn" data-action="ai-order" title="Ordenar con IA" style="color: var(--color-purple);"><i class="fa-solid fa-list-ol"></i> Ordenar IA</button>
+                    <button type="button" class="toolbar-btn ai-btn" data-action="ai-summarize" title="Resumir con IA" style="color: var(--color-purple);"><i class="fa-solid fa-compress"></i> Resumir IA</button>
+                    <button type="button" class="toolbar-btn ai-btn" data-action="ai-extend" title="Extender con IA" style="color: var(--color-purple);"><i class="fa-solid fa-expand"></i> Extender IA</button>
                 </div>
 
                 <textarea id="note-body-input" class="note-input body-input" placeholder="Comienza a escribir..."></textarea>
