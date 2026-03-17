@@ -509,7 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 .from('notes')
                 .upsert({
                     id: note.id,
-                    user_id: currentUser.id,
+                    user_id: note.user_id || currentUser.id,
+                    folder_id: note.folder_id,
                     title: note.title,
                     tags: note.tags,
                     body: note.body,
@@ -565,6 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     pinned: n.pinned,
                     color: n.color,
                     folder_id: n.folder_id,
+                    user_id: n.user_id,
                     shared: n.user_id !== currentUser.id,
                     createdAt: new Date(n.created_at).getTime(),
                     updatedAt: new Date(n.updated_at).getTime()
@@ -866,6 +868,25 @@ document.addEventListener('DOMContentLoaded', () => {
                         loadFoldersFromSupabase(),
                         loadNotesFromSupabase()
                     ]);
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'folders' },
+                () => {
+                    console.log('Cambio en folders detectado');
+                    Promise.all([
+                        loadFoldersFromSupabase(),
+                        loadNotesFromSupabase()
+                    ]);
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'notes' },
+                () => {
+                    console.log('Cambio en notes detectado');
+                    loadNotesFromSupabase();
                 }
             )
             .subscribe();
