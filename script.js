@@ -521,6 +521,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Undo ---
     el.undoBtn.addEventListener('click', () => {
+        if (deletedNote) {
+            notes.push(deletedNote);
+            saveToStorage();
+            if (currentUser && typeof syncNoteToSupabase === 'function') {
+                syncNoteToSupabase(deletedNote);
+            }
+            deletedNote = null;
+            renderNotes(el.searchInput.value);
+            hideToast();
+        }
+    });
 
     // ========================================
     // CORE FUNCTIONS
