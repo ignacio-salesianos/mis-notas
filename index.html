@@ -169,11 +169,16 @@
                     </div>
                 </div>
                 <div class="modal-actions-right">
-                    <div class="folder-selector hidden" id="note-folder-selector" title="Mover a carpeta">
-                        <i class="fa-regular fa-folder"></i>
-                        <select id="note-folder-select">
-                            <option value="">Sin carpeta</option>
-                        </select>
+                    <div class="dropdown hidden" id="note-folder-selector" title="Mover a carpeta" style="margin-right: 0.5rem;">
+                        <button id="folder-dropdown-btn" class="folder-dropdown-btn">
+                            <i class="fa-regular fa-folder" style="font-size: 0.85rem"></i>
+                            <span id="folder-dropdown-text">Sin carpeta</span>
+                            <i class="fa-solid fa-chevron-down checkout-icon" style="font-size: 0.6rem; opacity: 0.6; margin-left: 0.2rem;"></i>
+                        </button>
+                        <div id="folder-dropdown-menu" class="dropdown-menu folder-dropdown-menu hidden">
+                            <!-- Se rellena por JS -->
+                        </div>
+                        <input type="hidden" id="note-folder-select" value="">
                     </div>
                     <span id="save-status" class="save-status">Guardado</span>
                     <button id="toggle-preview-btn" class="icon-btn" aria-label="Vista previa" title="Ctrl+P (Previsualizar)">

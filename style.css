@@ -879,29 +879,36 @@ kbd {
     gap: 0.35rem;
 }
 
-.folder-selector {
+.folder-dropdown-btn {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.4rem;
     color: var(--text-muted);
     font-size: 0.8rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0.4rem 0.6rem;
     border-radius: 0.5rem;
     background: var(--bg-hover);
-    margin-right: 0.5rem;
-}
-.folder-selector.hidden {
-    display: none;
-}
-.folder-selector select {
-    background: transparent;
-    border: none;
-    color: var(--text-main);
-    font-family: inherit;
-    font-size: 0.75rem;
-    outline: none;
+    border: 1px solid transparent;
     cursor: pointer;
+    transition: all var(--fast);
+    font-family: inherit;
+    font-weight: 500;
+}
+.folder-dropdown-btn:hover {
+    color: var(--text-main);
+    border-color: var(--border-color);
+    background: var(--bg-surface);
+}
+#folder-dropdown-text {
     max-width: 100px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.folder-dropdown-menu {
+    min-width: 160px;
+    max-height: 250px;
+    overflow-y: auto;
 }
 
 .save-status {

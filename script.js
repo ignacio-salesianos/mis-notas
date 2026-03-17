@@ -86,6 +86,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         noteFolderSelector: $('#note-folder-selector'),
         noteFolderSelect: $('#note-folder-select'),
+        folderDropdownBtn: $('#folder-dropdown-btn'),
+        folderDropdownText: $('#folder-dropdown-text'),
+        folderDropdownMenu: $('#folder-dropdown-menu'),
 
         aiModal: $('#ai-modal'),
         closeAiModalBtn: $('#close-ai-modal-btn'),
@@ -259,7 +262,19 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
         el.dropdownMenu.classList.toggle('hidden');
     });
-    document.addEventListener('click', () => el.dropdownMenu.classList.add('hidden'));
+    
+    // --- Folder Dropdown ---
+    if (el.folderDropdownBtn) {
+        el.folderDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            el.folderDropdownMenu.classList.toggle('hidden');
+        });
+    }
+
+    document.addEventListener('click', () => {
+        el.dropdownMenu.classList.add('hidden');
+        if (el.folderDropdownMenu) el.folderDropdownMenu.classList.add('hidden');
+    });
 
     el.exportBtn.addEventListener('click', exportNotes);
     el.importBtn.addEventListener('click', () => el.importFile.click());
@@ -805,17 +820,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateFolderSelects() {
-        // Clear except first "Sin carpeta"
-        while (el.noteFolderSelect.options.length > 1) {
-            el.noteFolderSelect.remove(1);
-        }
+        if (!el.folderDropdownMenu) return;
+        
+        el.folderDropdownMenu.innerHTML = `
+            <button class="dropdown-item active" data-folder-id="">
+                <i class="fa-solid fa-folder-minus"></i> Sin carpeta
+            </button>
+        `;
         
         folders.forEach(f => {
-            const option = document.createElement('option');
-            option.value = f.id;
-            option.textContent = f.name;
-            el.noteFolderSelect.appendChild(option);
+            const btn = document.createElement('button');
+            btn.className = 'dropdown-item';
+            btn.dataset.folderId = f.id;
+            btn.innerHTML = `<i class="fa-regular fa-folder"></i> ${esc(f.name)}`;
+            el.folderDropdownMenu.appendChild(btn);
         });
+
+        // re-bind click events
+        const items = el.folderDropdownMenu.querySelectorAll('.dropdown-item');
+        items.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const folderId = item.dataset.folderId;
+                const folderName = item.textContent.trim();
+                
+                el.noteFolderSelect.value = folderId;
+                el.folderDropdownText.textContent = folderName;
+                
+                items.forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                
+                el.folderDropdownMenu.classList.add('hidden');
+                
+                if (currentNote) {
+                    currentNote.folder_id = folderId || null;
+                    triggerAutoSave(true);
+                }
+            });
+        });
+        
+        syncFolderDropdownText();
+    }
+
+    function syncFolderDropdownText() {
+        if (!el.noteFolderSelect || !el.folderDropdownText || !el.folderDropdownMenu) return;
+        const val = el.noteFolderSelect.value || '';
+        const items = el.folderDropdownMenu.querySelectorAll('.dropdown-item');
+        let found = false;
+        items.forEach(item => {
+            item.classList.remove('active');
+            if (item.dataset.folderId === val) {
+                item.classList.add('active');
+                el.folderDropdownText.textContent = item.textContent.trim();
+                found = true;
+            }
+        });
+        if (!found) {
+            el.folderDropdownText.textContent = 'Sin carpeta';
+            if (items[0]) items[0].classList.add('active');
+        }
     }
 
     // --- Share Logic ---
@@ -1195,6 +1259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el.tagsInput.value = Array.isArray(currentNote.tags) ? currentNote.tags.join(', ') : '';
         el.bodyInput.value = currentNote.body || '';
         el.noteFolderSelect.value = currentNote.folder_id || (activeFilter !== 'all' && activeFilter !== 'shared' ? activeFilter : '');
+        if (typeof syncFolderDropdownText === 'function') syncFolderDropdownText();
         el.pinBtn.classList.toggle('active', currentNote.pinned);
         setActiveColorDot(currentNote.color);
         el.saveStatus.classList.remove('visible');
