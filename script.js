@@ -11,7 +11,6 @@ document.addEventListener('DOMContentLoaded', () => {
         emptyState: $('#empty-state'),
         noResults: $('#no-results'),
         searchInput: $('#search-input'),
-        searchInput: $('#search-input'),
         clearSearch: $('#clear-search'),
         addBtn: $('#add-note-btn'),
         addAiBtn: $('#add-note-ai-btn'),
@@ -40,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modal: $('#note-modal'),
         closeModalBtn: $('#close-modal-btn'),
         titleInput: $('#note-title-input'),
-        tagsInput: $('#note-tags-input'),
         tagsInput: $('#note-tags-input'),
         toolbar: $('#note-toolbar'),
         toolbarBtns: $$('.toolbar-btn:not(.ai-btn)'),
@@ -111,10 +109,380 @@ document.addEventListener('DOMContentLoaded', () => {
     let deletedNote = null;
     let autoSaveTimer = null;
     let toastTimer = null;
-    let sortMode = localStorage.getItem('minimal_sort') || 'date'; // 'date' | 'alpha'
-    let activeFilter = 'all'; // 'all' | 'shared' | folderId
+    let sortMode = localStorage.getItem('minimal_sort') || 'date';
+    let activeFilter = 'all';
     let currentShareFolderId = null;
     let realtimeChannel = null;
+
+    // ========================================
+    // COLLABORATIVE EDITING STATE
+    // ========================================
+    let colabChannel = null;          // Supabase Broadcast channel for the open note
+    let colabPresenceChannel = null;  // Presence channel for the open note
+    let isReceivingRemote = false;    // Guard to avoid echo loops
+    let collaborators = {};           // { userId: { name, avatar, color } }
+    let remoteCaretColors = {};       // color assigned per remote user
+    const COLAB_COLORS = [
+        '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#a855f7',
+        '#ec4899', '#06b6d4', '#84cc16'
+    ];
+
+    // Create the collaborator avatars bar in the modal header (injected once)
+    const colabBar = document.createElement('div');
+    colabBar.id = 'colab-bar';
+    colabBar.style.cssText = `
+        display: flex; align-items: center; gap: 6px;
+        margin-right: 8px; transition: opacity 0.3s;
+    `;
+    // Insert before save-status in modal-actions-right
+    const saveStatusEl = el.saveStatus;
+    saveStatusEl.parentNode.insertBefore(colabBar, saveStatusEl);
+
+    // Live typing indicator label
+    const typingLabel = document.createElement('span');
+    typingLabel.id = 'typing-label';
+    typingLabel.style.cssText = `
+        font-size: 0.68rem; color: var(--text-muted); font-weight: 500;
+        opacity: 0; transition: opacity 0.3s; white-space: nowrap;
+        margin-right: 6px;
+    `;
+    saveStatusEl.parentNode.insertBefore(typingLabel, colabBar);
+
+    // Remote cursor overlay for the textarea
+    const remoteCursorOverlay = document.createElement('div');
+    remoteCursorOverlay.id = 'remote-cursor-overlay';
+    remoteCursorOverlay.style.cssText = `
+        position: absolute; pointer-events: none;
+        top: 0; left: 0; right: 0; bottom: 0; overflow: hidden;
+        z-index: 2;
+    `;
+    // Wrap textarea in a relative container
+    el.bodyInput.parentNode.style.position = 'relative';
+    el.bodyInput.parentNode.appendChild(remoteCursorOverlay);
+
+    // ========================================
+    // COLAB: JOIN / LEAVE CHANNEL
+    // ========================================
+    function joinColabChannel(noteId) {
+        leaveColabChannel();
+        if (!supabase || !currentUser || !noteId) return;
+
+        const channelName = `note-colab-${noteId}`;
+        collaborators = {};
+        remoteCaretColors = {};
+        updateColabBar();
+
+        colabChannel = supabase.channel(channelName, {
+            config: { broadcast: { self: false } }
+        });
+
+        // Listen for content changes from others
+        colabChannel.on('broadcast', { event: 'content' }, ({ payload }) => {
+            if (!payload || payload.userId === currentUser?.id) return;
+            isReceivingRemote = true;
+
+            // Update title
+            if (payload.title !== undefined && el.titleInput.value !== payload.title) {
+                const titlePos = el.titleInput.selectionStart;
+                el.titleInput.value = payload.title;
+                try { el.titleInput.setSelectionRange(titlePos, titlePos); } catch(e) {}
+            }
+
+            // Update body - preserve local cursor position
+            if (payload.body !== undefined && el.bodyInput.value !== payload.body) {
+                const bodyPos = el.bodyInput.selectionStart;
+                el.bodyInput.value = payload.body;
+                try { el.bodyInput.setSelectionRange(bodyPos, bodyPos); } catch(e) {}
+                updateCounts();
+            }
+
+            // Show remote caret position
+            if (payload.caretPos !== undefined && payload.userId) {
+                showRemoteCaret(payload.userId, payload.caretPos, payload.color);
+            }
+
+            isReceivingRemote = false;
+
+            // Pulse the typing indicator
+            const name = collaborators[payload.userId]?.name || 'Alguien';
+            showTypingLabel(`${name} está escribiendo...`);
+
+            // Sync to currentNote without re-saving
+            if (currentNote) {
+                currentNote.title = el.titleInput.value;
+                currentNote.body = el.bodyInput.value;
+            }
+        });
+
+        // Presence: track who's in the note
+        colabChannel.on('presence', { event: 'sync' }, () => {
+            const state = colabChannel.presenceState();
+            const newCollaborators = {};
+            let colorIdx = 0;
+
+            Object.values(state).forEach(presences => {
+                presences.forEach(p => {
+                    if (p.userId === currentUser?.id) return;
+                    const existingColor = remoteCaretColors[p.userId] || COLAB_COLORS[colorIdx % COLAB_COLORS.length];
+                    colorIdx++;
+                    remoteCaretColors[p.userId] = existingColor;
+                    newCollaborators[p.userId] = {
+                        name: p.name || 'Anónimo',
+                        avatar: p.avatar || null,
+                        color: existingColor
+                    };
+                });
+            });
+
+            collaborators = newCollaborators;
+            updateColabBar();
+        });
+
+        colabChannel.on('presence', { event: 'join' }, ({ newPresences }) => {
+            newPresences.forEach(p => {
+                if (p.userId === currentUser?.id) return;
+                const color = remoteCaretColors[p.userId] || COLAB_COLORS[Object.keys(remoteCaretColors).length % COLAB_COLORS.length];
+                remoteCaretColors[p.userId] = color;
+                collaborators[p.userId] = {
+                    name: p.name || 'Anónimo',
+                    avatar: p.avatar || null,
+                    color
+                };
+                updateColabBar();
+                showTypingLabel(`${p.name || 'Alguien'} se unió`);
+            });
+        });
+
+        colabChannel.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+            leftPresences.forEach(p => {
+                if (p.userId === currentUser?.id) return;
+                delete collaborators[p.userId];
+                delete remoteCaretColors[p.userId];
+                removeRemoteCaret(p.userId);
+                updateColabBar();
+            });
+        });
+
+        colabChannel.subscribe(async (status) => {
+            if (status === 'SUBSCRIBED' && currentUser) {
+                await colabChannel.track({
+                    userId: currentUser.id,
+                    name: currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'Tú',
+                    avatar: currentUser.user_metadata?.avatar_url || null,
+                    noteId
+                });
+            }
+        });
+    }
+
+    function leaveColabChannel() {
+        if (colabChannel) {
+            supabase?.removeChannel(colabChannel);
+            colabChannel = null;
+        }
+        collaborators = {};
+        remoteCaretColors = {};
+        remoteCursorOverlay.innerHTML = '';
+        updateColabBar();
+        typingLabel.style.opacity = '0';
+    }
+
+    // ========================================
+    // COLAB: BROADCAST CONTENT CHANGES
+    // ========================================
+    let broadcastTimer = null;
+
+    function broadcastContent() {
+        if (!colabChannel || !currentUser || isReceivingRemote) return;
+
+        // Throttle to ~60ms for smooth real-time feel
+        if (broadcastTimer) clearTimeout(broadcastTimer);
+        broadcastTimer = setTimeout(() => {
+            const caretPos = el.bodyInput.selectionStart;
+            colabChannel.send({
+                type: 'broadcast',
+                event: 'content',
+                payload: {
+                    userId: currentUser.id,
+                    title: el.titleInput.value,
+                    body: el.bodyInput.value,
+                    caretPos,
+                    color: remoteCaretColors[currentUser.id] || COLAB_COLORS[0]
+                }
+            });
+        }, 60);
+    }
+
+    // ========================================
+    // COLAB: REMOTE CARET VISUALIZATION
+    // ========================================
+    const remoteCaretEls = {}; // { userId: domElement }
+
+    function showRemoteCaret(userId, caretPos, color) {
+        if (!el.bodyInput || isPreviewMode) return;
+
+        const coords = getCaretCoordinates(el.bodyInput, caretPos);
+        if (!coords) return;
+
+        let caretEl = remoteCaretEls[userId];
+        if (!caretEl) {
+            caretEl = document.createElement('div');
+            caretEl.style.cssText = `
+                position: absolute; width: 2px; border-radius: 2px;
+                pointer-events: none; transition: top 0.1s, left 0.1s;
+                z-index: 3;
+            `;
+            const label = document.createElement('span');
+            label.style.cssText = `
+                position: absolute; top: -18px; left: 0;
+                background: ${color}; color: white;
+                font-size: 10px; font-weight: 600;
+                padding: 1px 5px; border-radius: 4px;
+                white-space: nowrap; pointer-events: none;
+                font-family: inherit;
+            `;
+            label.textContent = collaborators[userId]?.name?.split(' ')[0] || '?';
+            caretEl.appendChild(label);
+            remoteCursorOverlay.appendChild(caretEl);
+            remoteCaretEls[userId] = caretEl;
+        }
+
+        const c = color || '#f59e0b';
+        caretEl.style.background = c;
+        caretEl.style.height = `${coords.height}px`;
+
+        // Offset by textarea scroll and position
+        const textareaRect = el.bodyInput.getBoundingClientRect();
+        const overlayRect = remoteCursorOverlay.getBoundingClientRect();
+
+        const relTop = coords.top - el.bodyInput.scrollTop;
+        const relLeft = coords.left;
+
+        caretEl.style.top = `${relTop}px`;
+        caretEl.style.left = `${relLeft}px`;
+        caretEl.style.opacity = '1';
+
+        // Fade out after 3s of no updates
+        clearTimeout(caretEl._fadeTimer);
+        caretEl._fadeTimer = setTimeout(() => {
+            caretEl.style.opacity = '0';
+        }, 3000);
+    }
+
+    function removeRemoteCaret(userId) {
+        const el = remoteCaretEls[userId];
+        if (el) {
+            el.remove();
+            delete remoteCaretEls[userId];
+        }
+    }
+
+    // Get pixel coordinates of caret in a textarea
+    function getCaretCoordinates(textarea, position) {
+        try {
+            const div = document.createElement('div');
+            const style = getComputedStyle(textarea);
+            ['fontFamily','fontSize','fontWeight','lineHeight','letterSpacing',
+             'padding','paddingTop','paddingBottom','paddingLeft','paddingRight',
+             'border','borderTop','borderBottom','borderLeft','borderRight',
+             'width','boxSizing','whiteSpace','wordWrap','overflowWrap'
+            ].forEach(p => { div.style[p] = style[p]; });
+
+            div.style.position = 'absolute';
+            div.style.visibility = 'hidden';
+            div.style.whiteSpace = 'pre-wrap';
+            div.style.wordWrap = 'break-word';
+            div.style.overflow = 'hidden';
+            div.style.height = style.height;
+
+            const textBefore = textarea.value.substring(0, position);
+            div.textContent = textBefore;
+
+            const span = document.createElement('span');
+            span.textContent = '|';
+            div.appendChild(span);
+
+            document.body.appendChild(div);
+            const spanRect = span.getBoundingClientRect();
+            const divRect = div.getBoundingClientRect();
+            document.body.removeChild(div);
+
+            return {
+                top: spanRect.top - divRect.top + textarea.offsetTop,
+                left: spanRect.left - divRect.left + textarea.offsetLeft,
+                height: spanRect.height
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ========================================
+    // COLAB: UI HELPERS
+    // ========================================
+    function updateColabBar() {
+        colabBar.innerHTML = '';
+        const count = Object.keys(collaborators).length;
+        if (count === 0) {
+            colabBar.style.opacity = '0';
+            return;
+        }
+        colabBar.style.opacity = '1';
+
+        Object.entries(collaborators).forEach(([uid, info]) => {
+            const avatar = document.createElement('div');
+            avatar.title = info.name;
+            avatar.style.cssText = `
+                width: 26px; height: 26px; border-radius: 50%;
+                border: 2px solid ${info.color};
+                overflow: hidden; flex-shrink: 0;
+                display: flex; align-items: center; justify-content: center;
+                background: ${info.color}22; font-size: 11px; font-weight: 700;
+                color: ${info.color}; cursor: default;
+                transition: transform 0.2s;
+            `;
+            avatar.onmouseenter = () => avatar.style.transform = 'scale(1.15)';
+            avatar.onmouseleave = () => avatar.style.transform = 'scale(1)';
+
+            if (info.avatar) {
+                const img = document.createElement('img');
+                img.src = info.avatar;
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                img.onerror = () => { avatar.textContent = info.name?.[0]?.toUpperCase() || '?'; };
+                avatar.appendChild(img);
+            } else {
+                avatar.textContent = info.name?.[0]?.toUpperCase() || '?';
+            }
+            colabBar.appendChild(avatar);
+        });
+
+        // Pulse animation for new collaborators
+        const style = document.getElementById('colab-pulse-style') || (() => {
+            const s = document.createElement('style');
+            s.id = 'colab-pulse-style';
+            s.textContent = `
+                @keyframes colabPulse {
+                    0% { box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }
+                    70% { box-shadow: 0 0 0 8px rgba(245,158,11,0); }
+                    100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); }
+                }
+                #colab-bar > div { animation: colabPulse 1s ease-out; }
+                #typing-label { font-style: italic; }
+            `;
+            document.head.appendChild(s);
+            return s;
+        })();
+    }
+
+    let typingTimer = null;
+    function showTypingLabel(text) {
+        typingLabel.textContent = text;
+        typingLabel.style.opacity = '1';
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => {
+            typingLabel.style.opacity = '0';
+        }, 2500);
+    }
 
     // Init theme
     const savedTheme = localStorage.getItem('minimal_theme') || 'dark';
@@ -315,6 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el.logoutBtn) {
         el.logoutBtn.addEventListener('click', async () => {
             if (!supabase) return;
+            leaveColabChannel();
             if (realtimeChannel) {
                 supabase.removeChannel(realtimeChannel);
                 realtimeChannel = null;
@@ -347,8 +716,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.classList.contains('modal-backdrop')) closeModal();
     });
 
-    el.titleInput.addEventListener('input', () => { updateCounts(); triggerAutoSave(); });
-    el.bodyInput.addEventListener('input', () => { updateCounts(); triggerAutoSave(); });
+    el.titleInput.addEventListener('input', () => {
+        updateCounts();
+        triggerAutoSave();
+        broadcastContent(); // 🔴 BROADCAST
+    });
+    el.bodyInput.addEventListener('input', () => {
+        updateCounts();
+        triggerAutoSave();
+        broadcastContent(); // 🔴 BROADCAST
+    });
+
+    // Also broadcast on cursor movement (so others see caret moving)
+    el.bodyInput.addEventListener('keyup', broadcastContent);
+    el.bodyInput.addEventListener('click', broadcastContent);
+    el.bodyInput.addEventListener('selectionchange', broadcastContent);
 
     // Tab support in textarea
     el.bodyInput.addEventListener('keydown', (e) => {
@@ -360,6 +742,7 @@ document.addEventListener('DOMContentLoaded', () => {
             el.bodyInput.value = value.substring(0, start) + '    ' + value.substring(end);
             el.bodyInput.selectionStart = el.bodyInput.selectionEnd = start + 4;
             triggerAutoSave();
+            broadcastContent();
         }
     });
 
@@ -393,6 +776,7 @@ document.addEventListener('DOMContentLoaded', () => {
         el.bodyInput.classList.toggle('hidden', isPreviewMode);
         el.previewBody.classList.toggle('hidden', !isPreviewMode);
         el.toolbar.classList.toggle('hidden', isPreviewMode);
+        remoteCursorOverlay.style.display = isPreviewMode ? 'none' : 'block';
         
         const icon = el.togglePreviewBtn.querySelector('i');
         if (isPreviewMode) {
@@ -401,13 +785,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawMarkdown = el.bodyInput.value || '*Nada que previsualizar*';
             let markdown = typeof marked !== 'undefined' ? marked.parse(rawMarkdown) : '<p>Error cargando preview</p>';
             
-            // Un-disable checkboxes for interactivity
             markdown = markdown.replace(/<input disabled="" type="checkbox"/g, '<input type="checkbox" class="interactive-checkbox"');
             markdown = markdown.replace(/<input type="checkbox" disabled=""/g, '<input type="checkbox" class="interactive-checkbox"');
 
             el.previewBody.innerHTML = markdown;
             
-            // Add listeners to checkboxes
             setTimeout(() => {
                 const checkboxes = el.previewBody.querySelectorAll('.interactive-checkbox');
                 checkboxes.forEach((cb, index) => {
@@ -439,10 +821,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         el.bodyInput.value = newBody;
         currentNote.body = newBody;
-        
-        // Save automatically
         triggerAutoSave(true);
-        // We do NOT re-render preview immediately to not destroy user focus/scrolling
+        broadcastContent();
     }
 
     if (el.fullscreenBtn) {
@@ -488,6 +868,7 @@ document.addEventListener('DOMContentLoaded', () => {
             el.bodyInput.focus();
             el.bodyInput.selectionStart = el.bodyInput.selectionEnd = newCursorPos;
             triggerAutoSave();
+            broadcastContent();
         });
     });
 
@@ -531,6 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     triggerAutoSave();
                     updateCounts();
+                    broadcastContent();
                     hideToast();
                 } else {
                     showToast('Error con la IA');
@@ -580,7 +962,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveToStorage() {
         if (currentUser && supabase) {
-            // Guardar local as backup
             localStorage.setItem(`minimal_notes_${currentUser.id}`, JSON.stringify(notes));
         } else {
             localStorage.setItem('minimal_notes', JSON.stringify(notes));
@@ -632,7 +1013,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentUser || !supabase) return;
         
         try {
-            // RLS automatically filters only notes we own OR notes in folders shared with us
             const { data, error } = await supabase
                 .from('notes')
                 .select('*');
@@ -659,9 +1039,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }));
                 saveToStorage();
                 renderNotes();
-                if (notes.some(n => n.folder_id && !n.shared)) {
-                    // There are notes in folders, make sure those folders are active in the dropdown 
-                }
             }
         } catch (err) {
             console.error('Network error fetching from Supabase:', err);
@@ -672,7 +1049,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentUser || !supabase) return;
         
         try {
-            // Fetch all folders we have access to (both owned and shared via RLS)
             const { data: myFolders, error: myError } = await supabase
                 .from('folders')
                 .select('*')
@@ -767,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderNotes(el.searchInput.value);
             });
 
-            // Delete folder action
             const deleteBtn = li.querySelector('.delete-folder-btn');
             if (deleteBtn) {
                 deleteBtn.addEventListener('click', async (e) => {
@@ -778,7 +1153,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // Share folder action
             const shareBtn = li.querySelector('.share-folder-btn');
             if (shareBtn) {
                 shareBtn.addEventListener('click', (e) => {
@@ -836,7 +1210,6 @@ document.addEventListener('DOMContentLoaded', () => {
             el.folderDropdownMenu.appendChild(btn);
         });
 
-        // re-bind click events
         const items = el.folderDropdownMenu.querySelectorAll('.dropdown-item');
         items.forEach(item => {
             item.addEventListener('click', (e) => {
@@ -951,7 +1324,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 showToast(`Carpeta compartida con ${email}`);
                 el.shareEmailInput.value = '';
-                // Reload list
                 openShareModal(currentShareFolderId, el.shareModal.querySelector('h3').textContent.replace('Compartir "', '').replace('"', ''));
             }
         } catch (err) {
@@ -994,36 +1366,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         realtimeChannel = supabase.channel('custom-all-channel')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'shared_folders' },
-                () => {
-                    console.log('Cambio en shared_folders detectado');
-                    Promise.all([
-                        loadFoldersFromSupabase(),
-                        loadNotesFromSupabase()
-                    ]);
-                }
-            )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'folders' },
-                () => {
-                    console.log('Cambio en folders detectado');
-                    Promise.all([
-                        loadFoldersFromSupabase(),
-                        loadNotesFromSupabase()
-                    ]);
-                }
-            )
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'notes' },
-                () => {
-                    console.log('Cambio en notes detectado');
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_folders' }, () => {
+                Promise.all([loadFoldersFromSupabase(), loadNotesFromSupabase()]);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'folders' }, () => {
+                Promise.all([loadFoldersFromSupabase(), loadNotesFromSupabase()]);
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' }, (payload) => {
+                // Only reload if it's NOT the current user's own save (avoid double update)
+                if (payload.new?.user_id && payload.new.user_id !== currentUser?.id) {
+                    loadNotesFromSupabase();
+                } else if (!payload.new?.user_id) {
                     loadNotesFromSupabase();
                 }
-            )
+            })
             .subscribe();
     }
 
@@ -1043,7 +1399,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el.dropdownUserName) el.dropdownUserName.textContent = fullName;
             if (el.dropdownUserEmail) el.dropdownUserEmail.textContent = currentUser.email;
             
-            // Cargar local primero, luego sincronizar
             const localUserNotes = localStorage.getItem(`minimal_notes_${currentUser.id}`);
             if (localUserNotes) {
                 notes = JSON.parse(localUserNotes);
@@ -1054,7 +1409,6 @@ document.addEventListener('DOMContentLoaded', () => {
             el.foldersSection.classList.remove('hidden');
             el.noteFolderSelector.classList.remove('hidden');
             
-            // Cargar datos
             Promise.all([
                 loadFoldersFromSupabase(),
                 loadNotesFromSupabase()
@@ -1074,12 +1428,12 @@ document.addEventListener('DOMContentLoaded', () => {
             activeFilter = 'all';
             updateSidebarActive(el.navAllNotes);
             
+            leaveColabChannel();
             if (realtimeChannel) {
                 supabase.removeChannel(realtimeChannel);
                 realtimeChannel = null;
             }
             
-            // Volver a notas en local storage anónimo
             notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
             folders = [];
             renderFoldersSidebar();
@@ -1097,13 +1451,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let filtered = notes;
 
-        // Folder filtering
         if (activeFilter === 'shared') {
             filtered = notes.filter(n => n.shared);
         } else if (activeFilter !== 'all') {
             filtered = notes.filter(n => n.folder_id === activeFilter);
         } else {
-            // "Todas mis notas": Only show notes WITHOUT a folder and that are NOT shared
             filtered = notes.filter(n => !n.folder_id && !n.shared);
         }
 
@@ -1115,7 +1467,6 @@ document.addEventListener('DOMContentLoaded', () => {
             );
         }
 
-        // Show/hide states
         const hasNotes = notes.length > 0;
         const hasResults = filtered.length > 0;
 
@@ -1123,7 +1474,6 @@ document.addEventListener('DOMContentLoaded', () => {
         el.noResults.classList.toggle('hidden', !term || hasResults);
         el.noteCount.textContent = notes.length;
 
-        // Sort
         filtered.sort((a, b) => {
             if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
             if (sortMode === 'alpha') {
@@ -1132,7 +1482,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return b.updatedAt - a.updatedAt;
         });
 
-        // Configure marked with highlight.js renderer
         if (typeof marked !== 'undefined') {
             const renderer = new marked.Renderer();
             renderer.code = function(codeArg, langArg) {
@@ -1190,11 +1539,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (note.color && note.color !== 'default') {
-                if (savedTheme === 'dark') {
-                     card.style.backgroundColor = `var(--color-${note.color})`;
-                } else {
-                     card.style.backgroundColor = `var(--color-${note.color})`;
-                }
+                card.style.backgroundColor = `var(--color-${note.color})`;
             }
 
             const title = esc(note.title || 'Sin titulo');
@@ -1209,7 +1554,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let bodyHtml;
             if (typeof marked !== 'undefined' && note.body) {
                 bodyHtml = marked.parse(note.body);
-                // For preview cards, we generally want them disabled so they don't capture clicks
             } else {
                 bodyHtml = `<p>${esc(note.body || '')}</p>`;
             }
@@ -1266,12 +1610,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCounts();
         updateDateInfo();
 
-        // Setup initial mode: view if existing note, edit if new note
+        // Setup initial mode
         isPreviewMode = !!note;
         
         el.bodyInput.classList.toggle('hidden', isPreviewMode);
         el.previewBody.classList.toggle('hidden', !isPreviewMode);
         el.toolbar.classList.toggle('hidden', isPreviewMode);
+        remoteCursorOverlay.style.display = isPreviewMode ? 'none' : 'block';
         
         const icon = el.togglePreviewBtn.querySelector('i');
         if (isPreviewMode) {
@@ -1280,13 +1625,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const rawMarkdown = el.bodyInput.value || '*Nada que previsualizar*';
             let markdown = typeof marked !== 'undefined' ? marked.parse(rawMarkdown) : '<p>Error cargando preview</p>';
             
-            // Un-disable checkboxes for interactivity
             markdown = markdown.replace(/<input disabled="" type="checkbox"/g, '<input type="checkbox" class="interactive-checkbox"');
             markdown = markdown.replace(/<input type="checkbox" disabled=""/g, '<input type="checkbox" class="interactive-checkbox"');
 
             el.previewBody.innerHTML = markdown;
             
-            // Add listeners to checkboxes
             setTimeout(() => {
                 const checkboxes = el.previewBody.querySelectorAll('.interactive-checkbox');
                 checkboxes.forEach((cb, index) => {
@@ -1300,6 +1643,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         el.modal.classList.remove('hidden');
+
+        // 🔴 JOIN COLLABORATIVE CHANNEL for this note
+        if (currentUser && currentNote.id) {
+            joinColabChannel(currentNote.id);
+        }
 
         setTimeout(() => {
             if (!isPreviewMode) {
@@ -1319,6 +1667,9 @@ document.addEventListener('DOMContentLoaded', () => {
             saveToStorage();
         }
 
+        // 🔴 LEAVE COLLABORATIVE CHANNEL
+        leaveColabChannel();
+
         el.modal.classList.add('hidden');
         currentNote = null;
         renderNotes(el.searchInput.value, false);
@@ -1336,15 +1687,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function forceSave() {
         if (!currentNote) return;
 
-            currentNote.title = el.titleInput.value;
-            // Parse tags
-            const rawTags = el.tagsInput.value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
-            currentNote.tags = [...new Set(rawTags)];
-            currentNote.body = el.bodyInput.value;
-            currentNote.updatedAt = Date.now();
-            
-            // Parse Folder
-            currentNote.folder_id = el.noteFolderSelect.value || null;
+        currentNote.title = el.titleInput.value;
+        const rawTags = el.tagsInput.value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+        currentNote.tags = [...new Set(rawTags)];
+        currentNote.body = el.bodyInput.value;
+        currentNote.updatedAt = Date.now();
+        currentNote.folder_id = el.noteFolderSelect.value || null;
 
         const idx = notes.findIndex(n => n.id === currentNote.id);
         if (idx > -1) notes[idx] = { ...currentNote };
@@ -1469,7 +1817,6 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('minimal_theme', next);
         updateThemeIcon(next);
         
-        // Update highlight.js theme if possible
         const hljsLink = document.getElementById('hljs-theme');
         if (hljsLink) {
             if (next === 'light') {
@@ -1511,7 +1858,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (toastTimer) clearTimeout(toastTimer);
         el.toastMessage.textContent = message;
         el.toast.classList.remove('hidden');
-        void el.toast.offsetWidth; // reflow
+        void el.toast.offsetWidth;
         el.toast.classList.add('visible');
         toastTimer = setTimeout(hideToast, 4000);
     }
@@ -1548,7 +1895,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return d.innerHTML;
     }
 
-    // AI Generation global function using API
     async function generateAIContent(prompt) {
         try {
             const response = await fetch('/api/generate', {
@@ -1577,23 +1923,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-
     // Init sort buttons UI
     el.sortDateBtn.classList.toggle('active', sortMode === 'date');
     el.sortAlphaBtn.classList.toggle('active', sortMode === 'alpha');
-    
     
     // Global functions for inline HTML events
     window.copyCodeFromButton = function(btn) {
         const wrapper = btn.closest('.code-block-wrapper');
         const codeElement = wrapper.querySelector('pre code');
-        const code = codeElement.textContent; // Using textContent retains newlines and ignores HTML tags
+        const code = codeElement.textContent;
         navigator.clipboard.writeText(code).then(() => {
             const originalHtml = btn.innerHTML;
             btn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado';
             setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
         }).catch(() => {
-            // fallback if clipboard fails
             console.error('No se pudo copiar el texto');
         });
     };
