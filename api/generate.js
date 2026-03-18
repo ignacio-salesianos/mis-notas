@@ -16,8 +16,8 @@ export default async function handler(req, res) {
     // Model priority list — tries each in order until one succeeds
     const models = [
         'gemma-3-27b-it',         // Gemma 3 (replaces deprecated gemma-2-27b-it)
-        'gemini-2.0-flash',       // Fast, free tier, very reliable
-        'gemini-1.5-flash',       // Proven fallback
+        'gemma-3-12b-it',       // Fast, free tier, very reliable
+        'gemini-3.1-flash-lite-preview',       // Proven fallback
     ];
 
     const body = JSON.stringify({
