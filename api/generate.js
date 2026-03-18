@@ -13,52 +13,47 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'GEMINI_API_KEY environment variable is not set' });
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemma-2-27b-it:generateContent?key=${apiKey}`;
+    // Model priority list — tries each in order until one succeeds
+    const models = [
+        'gemma-3-27b-it',         // Gemma 3 (replaces deprecated gemma-2-27b-it)
+        'gemini-2.0-flash',       // Fast, free tier, very reliable
+        'gemini-1.5-flash',       // Proven fallback
+    ];
 
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7 }
-            })
-        });
+    const body = JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7 }
+    });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Google API error: ${response.status} ${errorText}`);
-        }
-
-        const data = await response.json();
-        if (data.candidates && data.candidates[0].content.parts[0].text) {
-            return res.status(200).json({ text: data.candidates[0].content.parts[0].text });
-        }
-        
-        throw new Error('No content in response');
-
-    } catch (error) {
-        console.error('Error generating AI content:', error);
-        
-        // Fallback for Gemini 1.5 flash if Gemma fails
+    for (const model of models) {
         try {
-            const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-            const fallbackResponse = await fetch(fallbackUrl, {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.7 }
-                })
+                body
             });
-            const fData = await fallbackResponse.json();
-            if (fData.candidates && fData.candidates[0].content.parts[0].text) {
-                return res.status(200).json({ text: fData.candidates[0].content.parts[0].text });
-            }
-        } catch (e) {
-            console.error('Fallback failed:', e);
-        }
 
-        return res.status(500).json({ error: 'Failed to generate content' });
+            if (!response.ok) {
+                const errText = await response.text();
+                console.error(`Model ${model} failed (${response.status}):`, errText);
+                continue; // try next model
+            }
+
+            const data = await response.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
+                console.log(`Success with model: ${model}`);
+                return res.status(200).json({ text });
+            }
+
+            console.error(`Model ${model} returned no text:`, JSON.stringify(data));
+
+        } catch (err) {
+            console.error(`Model ${model} threw an error:`, err.message);
+        }
     }
+
+    return res.status(500).json({ error: 'All models failed to generate content' });
 }
