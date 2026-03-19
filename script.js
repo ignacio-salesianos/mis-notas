@@ -146,95 +146,6 @@ document.addEventListener('DOMContentLoaded', () => {
     el.bodyInput.parentNode.style.position = 'relative';
     el.bodyInput.parentNode.appendChild(remoteCursorOverlay);
 
-    // Inject CSS
-    if (!document.getElementById('app-extra-styles')) {
-        const s = document.createElement('style');
-        s.id = 'app-extra-styles';
-        s.textContent = `
-            @keyframes colabPulse {
-                0%   { box-shadow: 0 0 0 0   rgba(245,158,11,.5); }
-                70%  { box-shadow: 0 0 0 8px rgba(245,158,11,0);  }
-                100% { box-shadow: 0 0 0 0   rgba(245,158,11,0);  }
-            }
-            #colab-bar > div { animation: colabPulse 1s ease-out; }
-
-            /* Intent-to-edit hint on preview */
-            #note-preview { cursor: default; }
-            #note-preview.editable-hint { cursor: text; position: relative; }
-            #note-preview.editable-hint::after {
-                content: '✏️  Doble clic para editar';
-                position: absolute; bottom: 6px; right: 10px;
-                font-size: .68rem; color: var(--text-muted);
-                opacity: 0; transition: opacity .2s; pointer-events: none;
-            }
-            #note-preview.editable-hint:hover::after { opacity: 1; }
-
-            /* ---- MOBILE IMPROVEMENTS ---- */
-            @media (max-width: 768px) {
-                /* Hide desktop add buttons, show FABs instead */
-                .main-add-actions { display: none !important; }
-
-                /* Floating action buttons */
-                .mobile-fab-group {
-                    position: fixed; bottom: 1.25rem; right: 1.25rem;
-                    display: flex; flex-direction: column-reverse; gap: .65rem;
-                    z-index: 45;
-                }
-                .mobile-fab {
-                    width: 54px; height: 54px; border-radius: 50%;
-                    border: none; cursor: pointer;
-                    display: flex; align-items: center; justify-content: center;
-                    font-size: 1.25rem;
-                    box-shadow: 0 4px 18px rgba(0,0,0,.28);
-                    transition: transform .15s, box-shadow .15s;
-                }
-                .mobile-fab:active { transform: scale(.9); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
-                .mobile-fab.primary { background: var(--accent); color: var(--accent-text); }
-                .mobile-fab.ai {
-                    background: linear-gradient(135deg, #5865f2, #a266eb);
-                    color: #fff; font-size: 1.05rem;
-                }
-
-                /* Modal full-screen on mobile */
-                .modal { padding: 0 !important; }
-                .modal-content { border-radius: 0 !important; height: 100dvh !important; }
-                .modal-header {
-                    padding: .6rem .85rem !important;
-                    flex-wrap: wrap; gap: .35rem;
-                    border-bottom-width: 1px;
-                }
-                .modal-body { padding: .85rem 1rem 1rem !important; }
-                .title-input { font-size: 1.35rem !important; margin-bottom: .35rem; }
-                .body-input { font-size: .97rem !important; }
-
-                /* Toolbar scrollable on mobile */
-                .minimal-toolbar {
-                    overflow-x: auto; -webkit-overflow-scrolling: touch;
-                    padding-bottom: 4px; scrollbar-width: none; flex-wrap: nowrap;
-                }
-                .minimal-toolbar::-webkit-scrollbar { display: none; }
-
-                /* Tighten color picker */
-                .color-picker { gap: .18rem; }
-                .color-dot { width: 14px !important; height: 14px !important; }
-
-                /* Folder dropdown label hidden on small screens */
-                #folder-dropdown-text { display: none; }
-
-                /* Modal footer compact */
-                .modal-footer { padding: .45rem .85rem; font-size: .68rem; }
-
-                /* Save status shorter */
-                #save-status { font-size: .65rem; }
-
-                /* Colab bar tighter */
-                #colab-bar > div { width: 22px !important; height: 22px !important; }
-                #typing-label { font-size: .62rem !important; }
-            }
-        `;
-        document.head.appendChild(s);
-    }
-
     // ========================================
     // MOBILE FAB
     // ========================================
@@ -1233,30 +1144,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function importNotes(e) {
-        const file = e.target.files[0]; if (!file) return;
-        new FileReader().onload = (ev) => {
+        const file = e.target.files[0]; 
+        if (!file) return;
+        const fr = new FileReader(); 
+        fr.onload = (ev) => {
             try {
-                const imported = JSON.parse(ev.target.result);
+                const imported = JSON.parse(ev.target.result); 
                 if (!Array.isArray(imported)) throw new Error();
                 let count = 0;
-                imported.forEach(n => {
-                    if (n.id && !notes.find(x => x.id === n.id)) {
-                        notes.push({ id: n.id, title: n.title || '', tags: Array.isArray(n.tags) ? n.tags : [], body: n.body || '', pinned: !!n.pinned, color: n.color || 'default', createdAt: n.createdAt || Date.now(), updatedAt: n.updatedAt || Date.now() });
-                        count++;
-                    }
+                imported.forEach(n => { 
+                    if (n.id && !notes.find(x => x.id === n.id)) { 
+                        notes.push({ id: n.id, title: n.title||'', tags: Array.isArray(n.tags)?n.tags:[], body: n.body||'', pinned:!!n.pinned, color: n.color||'default', createdAt: n.createdAt||Date.now(), updatedAt: n.updatedAt||Date.now() }); 
+                        count++; 
+                    } 
                 });
                 saveToStorage(); renderNotes(); showToast(`${count} nota(s) importada(s)`);
-            } catch(_) { showToast('Archivo no válido'); }
+            } catch(_) { 
+                showToast('Archivo no válido'); 
+            }
         };
-        const fr = new FileReader(); fr.onload = (ev) => {
-            try {
-                const imported = JSON.parse(ev.target.result); if (!Array.isArray(imported)) throw 0;
-                let count = 0;
-                imported.forEach(n => { if (n.id && !notes.find(x => x.id === n.id)) { notes.push({ id: n.id, title: n.title||'', tags: Array.isArray(n.tags)?n.tags:[], body: n.body||'', pinned:!!n.pinned, color: n.color||'default', createdAt: n.createdAt||Date.now(), updatedAt: n.updatedAt||Date.now() }); count++; } });
-                saveToStorage(); renderNotes(); showToast(`${count} nota(s) importada(s)`);
-            } catch(_) { showToast('Archivo no válido'); }
-        };
-        fr.readAsText(file); el.importFile.value = ''; el.dropdownMenu.classList.add('hidden');
+        fr.readAsText(file); 
+        el.importFile.value = ''; 
+        el.dropdownMenu.classList.add('hidden');
     }
 
     function setSortMode(mode) {
