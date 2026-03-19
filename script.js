@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         sortDateBtn: $('#sort-date-btn'),
         sortAlphaBtn: $('#sort-alpha-btn'),
 
+        syncStatus: $('#sync-status'), // Nuevo indicador
+
         authContainer: $('#auth-container'),
         loginGoogleBtn: $('#login-google-btn'),
         userProfileContainer: $('#user-profile-container'),
@@ -102,8 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
     let currentUser   = null;
-    let notes         = JSON.parse(localStorage.getItem('minimal_notes')) || [];
-    let folders       = JSON.parse(localStorage.getItem('minimal_folders')) || [];
+    let notes         = [];
+    let folders       = [];
     let currentNote   = null;
     let deletedNote   = null;
     let autoSaveTimer = null;
@@ -114,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentShareFolderId = null;
     let realtimeChannel      = null;
     let isPreviewMode        = false;
+    let isAppInitialized     = false;
 
     // Collaborative state
     let colabChannel      = null;
@@ -126,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const remoteCaretEls  = {};
 
     // ========================================
-    // BUILD COLAB UI (injected once)
+    // BUILD COLAB UI
     // ========================================
     const typingLabel = document.createElement('span');
     typingLabel.id = 'typing-label';
@@ -187,20 +190,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.documentElement.setAttribute('data-theme', savedTheme);
     updateThemeIcon(savedTheme);
 
-    // ========================================
-    // INIT
-    // ========================================
-    renderNotes();
-
-    if (supabase) {
-        supabase.auth.getSession().then(({ data: { session } }) => handleSession(session));
-        supabase.auth.onAuthStateChange((_e, session) => handleSession(session));
-    }
 
     // ========================================
     // EVENT LISTENERS
     // ========================================
-
     el.addBtn.addEventListener('click', () => openModal());
     el.addAiBtn?.addEventListener('click', openAiModal);
     el.closeAiModalBtn?.addEventListener('click', () => el.aiModal.classList.add('hidden'));
@@ -221,13 +214,13 @@ document.addEventListener('DOMContentLoaded', () => {
         activeFilter = 'all';
         el.header.querySelector('#header-title').textContent = 'Todas mis notas';
         updateSidebarActive(el.navAllNotes);
-        renderNotes(el.searchInput.value);
+        renderNotes(el.searchInput.value, true);
     });
     el.navSharedNotes?.addEventListener('click', () => {
         activeFilter = 'shared';
         el.header.querySelector('#header-title').textContent = 'Compartidas conmigo';
         updateSidebarActive(el.navSharedNotes);
-        renderNotes(el.searchInput.value);
+        renderNotes(el.searchInput.value, true);
     });
 
     el.addFolderBtn.addEventListener('click', () => {
@@ -249,7 +242,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('scroll', () => el.header.classList.toggle('scrolled', window.scrollY > 10), { passive: true });
 
-    // Search — debounced render
     el.searchInput.addEventListener('input', (e) => {
         el.clearSearch.classList.toggle('hidden', !e.target.value);
         debouncedRender(e.target.value);
@@ -257,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     el.clearSearch.addEventListener('click', () => {
         el.searchInput.value = '';
         el.clearSearch.classList.add('hidden');
-        renderNotes();
+        renderNotes('', false);
         el.searchInput.focus();
     });
 
@@ -286,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
         await supabase.auth.signOut();
         notes = []; el.userDropdownMenu.classList.remove('show');
-        saveToStorage(); renderNotes();
+        saveToStorage(); renderNotes('', true);
     });
 
     // Grid
@@ -305,13 +297,11 @@ document.addEventListener('DOMContentLoaded', () => {
     el.closeModalBtn.addEventListener('click', closeModal);
     el.modal.addEventListener('click', (e) => { if (e.target.classList.contains('modal-backdrop')) closeModal(); });
 
-    // Inputs → broadcast
     el.titleInput.addEventListener('input', () => { updateCounts(); triggerAutoSave(); broadcastContent(); });
     el.bodyInput.addEventListener('input',  () => { updateCounts(); triggerAutoSave(); broadcastContent(); });
     el.bodyInput.addEventListener('keyup',  broadcastContent);
     el.bodyInput.addEventListener('click',  broadcastContent);
 
-    // Tab key
     el.bodyInput.addEventListener('keydown', (e) => {
         if (e.key !== 'Tab') return;
         e.preventDefault();
@@ -321,9 +311,6 @@ document.addEventListener('DOMContentLoaded', () => {
         triggerAutoSave(); broadcastContent();
     });
 
-    // ─────────────────────────────────────────
-    // INTENT-TO-EDIT: double-click or triple-tap
-    // ─────────────────────────────────────────
     el.previewBody.classList.add('editable-hint');
     el.previewBody.addEventListener('dblclick', () => { if (isPreviewMode) switchToEditMode(); });
 
@@ -336,7 +323,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (_tapCount >= 3) { _tapCount = 0; switchToEditMode(); }
     });
 
-    // Pin / duplicate
     el.pinBtn.addEventListener('click', () => {
         if (!currentNote) return;
         currentNote.pinned = !currentNote.pinned;
@@ -345,20 +331,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     el.duplicateBtn.addEventListener('click', () => {
         if (!currentNote) return;
-        notes.push({ id: generateId(), title: (currentNote.title || '') + ' (copia)', tags: [...(currentNote.tags || [])], body: el.bodyInput.value, pinned: false, color: currentNote.color, createdAt: Date.now(), updatedAt: Date.now() });
-        saveToStorage(); showToast('Nota duplicada');
+        const newNote = { id: generateId(), title: (currentNote.title || '') + ' (copia)', tags: [...(currentNote.tags || [])], body: el.bodyInput.value, pinned: false, color: currentNote.color, createdAt: Date.now(), updatedAt: Date.now() };
+        notes.push(newNote);
+        saveToStorage(); 
+        if(currentUser) syncNoteToSupabase(newNote);
+        showToast('Nota duplicada');
     });
 
-    // Preview toggle button
     el.togglePreviewBtn.addEventListener('click', () => { isPreviewMode ? switchToEditMode() : switchToPreviewMode(); });
 
-    // Fullscreen
     el.fullscreenBtn?.addEventListener('click', () => {
         el.modal.classList.toggle('fullscreen');
         el.fullscreenBtn.querySelector('i').className = el.modal.classList.contains('fullscreen') ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
     });
 
-    // Download
     el.downloadNoteBtn.addEventListener('click', () => {
         if (!currentNote) return;
         const content = `${el.titleInput.value ? '# ' + el.titleInput.value + '\n\n' : ''}${el.bodyInput.value}`;
@@ -366,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         a.click();
     });
 
-    // Color dots
     el.colorDots.forEach(dot => dot.addEventListener('click', () => {
         if (!currentNote) return;
         currentNote.color = dot.dataset.color;
@@ -374,18 +359,16 @@ document.addEventListener('DOMContentLoaded', () => {
         triggerAutoSave(true);
     }));
 
-    // Toolbar
     el.toolbarBtns.forEach(btn => btn.addEventListener('click', () => { applyToolbarAction(btn.dataset.action); broadcastContent(); }));
     el.aiBtns.forEach(btn => btn.addEventListener('click', () => handleAiToolbar(btn.dataset.action)));
 
-    // Undo delete
     el.undoBtn.addEventListener('click', () => {
         if (!deletedNote) return;
         notes.push(deletedNote);
         saveToStorage();
         if (currentUser) syncNoteToSupabase(deletedNote);
         deletedNote = null;
-        renderNotes(el.searchInput.value);
+        renderNotes(el.searchInput.value, false);
         hideToast();
     });
 
@@ -435,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // TOOLBAR
+    // TOOLBAR & AI
     // ========================================
     function applyToolbarAction(action) {
         const s = el.bodyInput.selectionStart, e2 = el.bodyInput.selectionEnd;
@@ -456,9 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
         triggerAutoSave();
     }
 
-    // ========================================
-    // AI TOOLBAR
-    // ========================================
     async function handleAiToolbar(action) {
         if (!currentNote) return;
         const s = el.bodyInput.selectionStart, e2 = el.bodyInput.selectionEnd;
@@ -478,9 +458,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else { showToast('Error con la IA'); }
     }
 
-    // ========================================
-    // AI MODAL
-    // ========================================
     function openAiModal() {
         el.aiTopicInput.value = '';
         el.aiModal.classList.remove('hidden');
@@ -506,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             notes.push(newNote); saveToStorage();
             if (currentUser) syncNoteToSupabase(newNote);
-            renderNotes(el.searchInput.value);
+            renderNotes(el.searchInput.value, true);
             hideToast(); el.aiModal.classList.add('hidden');
             openModal(newNote);
         } else { showToast('Error al generar la nota'); }
@@ -527,7 +504,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         colabChannel = supabase.channel(`note-colab-${noteId}`, { config: { broadcast: { self: false } } });
 
-        // Receive 'typing' events from others
         colabChannel.on('broadcast', { event: 'typing' }, ({ payload }) => {
             if (!payload || payload.userId === currentUser?.id) return;
             isReceivingRemote = true;
@@ -545,7 +521,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateCounts();
             }
 
-            // Keep preview live if it's open
             if (isPreviewMode) renderPreview();
 
             if (payload.caretPos !== undefined) showRemoteCaret(payload.userId, payload.caretPos, payload.color);
@@ -556,7 +531,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showTypingLabel(`${collaborators[payload.userId]?.name || 'Alguien'} está escribiendo...`);
         });
 
-        // Presence
         colabChannel.on('presence', { event: 'sync' }, () => {
             collaborators = {}; let idx = 0;
             Object.values(colabChannel.presenceState()).flat().forEach(p => {
@@ -587,7 +561,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Subscribe & track self
         colabChannel.subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
                 await colabChannel.track({
@@ -609,7 +582,6 @@ document.addEventListener('DOMContentLoaded', () => {
         typingLabel.style.opacity = '0';
     }
 
-    // Emit 'typing' event (throttled 60ms)
     function broadcastContent() {
         if (!colabChannel || !currentUser || isReceivingRemote) return;
         clearTimeout(broadcastTimer);
@@ -627,7 +599,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 60);
     }
 
-    // Remote caret rendering
     function showRemoteCaret(userId, caretPos, color) {
         if (!el.bodyInput || isPreviewMode) return;
         const coords = getCaretCoordinates(el.bodyInput, caretPos);
@@ -715,12 +686,14 @@ document.addEventListener('DOMContentLoaded', () => {
     async function syncNoteToSupabase(note) {
         if (!currentUser || !supabase) return;
         try {
+            el.syncStatus?.classList.remove('hidden');
             await supabase.from('notes').upsert({
                 id: note.id, user_id: note.user_id || currentUser.id, folder_id: note.folder_id,
                 title: note.title, tags: note.tags, body: note.body, pinned: note.pinned, color: note.color,
                 created_at: new Date(note.createdAt).toISOString(), updated_at: new Date(note.updatedAt).toISOString()
             }, { onConflict: 'id' });
         } catch(e) { console.error('syncNote:', e); }
+        finally { el.syncStatus?.classList.add('hidden'); }
     }
 
     async function deleteNoteFromSupabase(noteId) {
@@ -732,6 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadNotesFromSupabase() {
         if (!currentUser || !supabase) return;
         try {
+            el.syncStatus?.classList.remove('hidden');
             const { data, error } = await supabase.from('notes').select('*');
             if (error) { showToast('Error cargando notas'); return; }
             if (data?.length) {
@@ -741,9 +715,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     shared: n.user_id !== currentUser.id,
                     createdAt: new Date(n.created_at).getTime(), updatedAt: new Date(n.updated_at).getTime()
                 }));
-                saveToStorage(); renderNotes();
+                saveToStorage(); 
+                renderNotes(el.searchInput.value, false); // No animar en background sync
             }
         } catch(e) { console.error('loadNotes:', e); }
+        finally { el.syncStatus?.classList.add('hidden'); }
     }
 
     async function loadFoldersFromSupabase() {
@@ -795,7 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (e.target.closest('.share-folder-btn') || e.target.closest('.delete-folder-btn')) return;
                 activeFilter = folder.id;
                 el.header.querySelector('#header-title').textContent = folder.name;
-                updateSidebarActive(li); renderNotes(el.searchInput.value);
+                updateSidebarActive(li); renderNotes(el.searchInput.value, true);
             });
             li.querySelector('.delete-folder-btn')?.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -814,7 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
             notes   = notes.filter(n => n.folder_id !== id);
             saveFoldersToStorage(); saveToStorage();
             if (activeFilter === id) el.navAllNotes.click();
-            else { renderFoldersSidebar(); renderNotes(); }
+            else { renderFoldersSidebar(); renderNotes('', false); }
             showToast('Carpeta eliminada');
         } else showToast('Error al eliminar');
     }
@@ -904,7 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // AUTH
+    // AUTH & INITIALIZATION
     // ========================================
     function setupRealtimeSubscriptions() {
         if (!currentUser || !supabase) return;
@@ -916,7 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .subscribe();
     }
 
-    function handleSession(session) {
+    async function handleSession(session, isInitialBoot = false) {
         currentUser = session?.user || null;
         if (currentUser) {
             el.loginGoogleBtn.style.display = 'none';
@@ -928,12 +904,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (el.userName)          el.userName.textContent          = name;
             if (el.dropdownUserName)  el.dropdownUserName.textContent  = name;
             if (el.dropdownUserEmail) el.dropdownUserEmail.textContent = currentUser.email;
+            
             notes = JSON.parse(localStorage.getItem(`minimal_notes_${currentUser.id}`)) || [];
+            
             el.foldersSection.classList.remove('hidden');
             el.noteFolderSelector.classList.remove('hidden');
             el.navSharedNotes?.classList.remove('hidden');
+            
+            // Render optimista local rápido
+            renderNotes(el.searchInput.value, isInitialBoot);
+
             Promise.all([loadFoldersFromSupabase(), loadNotesFromSupabase()]).then(() => {
-                renderFoldersSidebar(); renderNotes(); setupRealtimeSubscriptions();
+                renderFoldersSidebar(); 
+                if (isInitialBoot) setupRealtimeSubscriptions();
             });
         } else {
             el.loginGoogleBtn.style.display = 'flex';
@@ -947,16 +930,35 @@ document.addEventListener('DOMContentLoaded', () => {
             if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
             notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
             folders = [];
-            renderFoldersSidebar(); renderNotes();
+            renderFoldersSidebar(); 
+            renderNotes(el.searchInput.value, isInitialBoot);
+        }
+    }
+
+    async function initApp() {
+        if (supabase) {
+            const { data: { session } } = await supabase.auth.getSession();
+            await handleSession(session, true);
+        } else {
+            notes = JSON.parse(localStorage.getItem('minimal_notes')) || [];
+            renderNotes('', true);
+        }
+        isAppInitialized = true;
+
+        if (supabase) {
+            supabase.auth.onAuthStateChange((_e, session) => {
+                if (isAppInitialized) handleSession(session, false);
+            });
         }
     }
 
     // ========================================
-    // RENDER NOTES  (debounced for search)
+    // RENDER NOTES
     // ========================================
     function debouncedRender(term = '') {
         clearTimeout(renderTimer);
-        renderTimer = setTimeout(() => renderNotes(term), 120);
+        // Desactivamos la animacion al teclear en buscar
+        renderTimer = setTimeout(() => renderNotes(term, false), 120);
     }
 
     function setupMarkedRenderer() {
@@ -1004,14 +1006,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setupMarkedRenderer();
 
-        // DocumentFragment → single DOM write
         const frag = document.createDocumentFragment();
         filtered.forEach((note, i) => {
             const card = document.createElement('div');
             card.className = `note-card${note.pinned ? ' pinned' : ''}`;
             card.dataset.id = note.id;
-            if (animate) card.style.setProperty('--animation-order', `${Math.min(i * 0.05, 0.5)}s`);
-            else { card.style.animation = 'none'; card.style.opacity = '1'; card.style.transform = 'none'; }
+            
+            if (animate) {
+                card.style.animation = 'cardFadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+                card.style.setProperty('--animation-order', `${Math.min(i * 0.05, 0.5)}s`);
+            } else {
+                card.style.animation = 'none'; 
+                card.style.opacity = '1'; 
+                card.style.transform = 'none';
+            }
+            
             if (note.color && note.color !== 'default') card.style.backgroundColor = `var(--color-${note.color})`;
 
             const tags = Array.isArray(note.tags) ? note.tags : [];
@@ -1036,8 +1045,8 @@ document.addEventListener('DOMContentLoaded', () => {
             frag.appendChild(card);
         });
 
-        el.grid.innerHTML = '';         // single clear
-        el.grid.appendChild(frag);      // single paint
+        el.grid.innerHTML = '';
+        el.grid.appendChild(frag);
     }
 
     // ========================================
@@ -1056,13 +1065,11 @@ document.addEventListener('DOMContentLoaded', () => {
         el.saveStatus.classList.remove('visible');
         updateCounts(); updateDateInfo();
 
-        // Existing notes → preview; new notes → edit
         if (note) switchToPreviewMode();
         else      switchToEditMode();
 
         el.modal.classList.remove('hidden');
 
-        // Join collaborative channel
         if (currentUser && currentNote.id) joinColabChannel(currentNote.id);
 
         if (!isPreviewMode) {
@@ -1126,15 +1133,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (idx > -1) {
                 deletedNote = notes[idx]; notes.splice(idx, 1);
                 saveToStorage(); if (currentUser) deleteNoteFromSupabase(id);
-                renderNotes(el.searchInput.value); showToast('Nota eliminada');
+                renderNotes(el.searchInput.value, false); showToast('Nota eliminada');
             }
         }, 250);
     }
 
     function duplicateNote(id) {
         const orig = notes.find(n => n.id === id); if (!orig) return;
-        notes.push({ id: generateId(), title: (orig.title || '') + ' (copia)', tags: [...(orig.tags || [])], body: orig.body, pinned: false, color: orig.color, createdAt: Date.now(), updatedAt: Date.now() });
-        saveToStorage(); renderNotes(el.searchInput.value); showToast('Nota duplicada');
+        const dup = { id: generateId(), title: (orig.title || '') + ' (copia)', tags: [...(orig.tags || [])], body: orig.body, pinned: false, color: orig.color, createdAt: Date.now(), updatedAt: Date.now() };
+        notes.push(dup);
+        saveToStorage(); 
+        if(currentUser) syncNoteToSupabase(dup);
+        renderNotes(el.searchInput.value, true); showToast('Nota duplicada');
     }
 
     function exportNotes() {
@@ -1154,11 +1164,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 let count = 0;
                 imported.forEach(n => { 
                     if (n.id && !notes.find(x => x.id === n.id)) { 
-                        notes.push({ id: n.id, title: n.title||'', tags: Array.isArray(n.tags)?n.tags:[], body: n.body||'', pinned:!!n.pinned, color: n.color||'default', createdAt: n.createdAt||Date.now(), updatedAt: n.updatedAt||Date.now() }); 
+                        const newNote = { id: n.id, title: n.title||'', tags: Array.isArray(n.tags)?n.tags:[], body: n.body||'', pinned:!!n.pinned, color: n.color||'default', createdAt: n.createdAt||Date.now(), updatedAt: n.updatedAt||Date.now() };
+                        notes.push(newNote); 
+                        if(currentUser) syncNoteToSupabase(newNote); // Sincroniza en nube si importamos
                         count++; 
                     } 
                 });
-                saveToStorage(); renderNotes(); showToast(`${count} nota(s) importada(s)`);
+                saveToStorage(); renderNotes('', true); showToast(`${count} nota(s) importada(s)`);
             } catch(_) { 
                 showToast('Archivo no válido'); 
             }
@@ -1172,11 +1184,11 @@ document.addEventListener('DOMContentLoaded', () => {
         sortMode = mode; localStorage.setItem('minimal_sort', mode);
         el.sortDateBtn.classList.toggle('active', mode === 'date');
         el.sortAlphaBtn.classList.toggle('active', mode === 'alpha');
-        renderNotes(el.searchInput.value); el.dropdownMenu.classList.add('hidden');
+        renderNotes(el.searchInput.value, true); el.dropdownMenu.classList.add('hidden');
     }
 
     // ========================================
-    // THEME
+    // THEME & HELPERS
     // ========================================
     function toggleTheme() {
         const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
@@ -1187,9 +1199,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (link) link.href = `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-${next}.min.css`;
     }
 
-    // ========================================
-    // UI HELPERS
-    // ========================================
     function updateCounts() {
         const body = el.bodyInput.value;
         const words = body.trim() ? body.trim().split(/\s+/).length : 0;
@@ -1253,14 +1262,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ========================================
-    // INIT SORT UI
+    // STARTUP
     // ========================================
     el.sortDateBtn.classList.toggle('active', sortMode === 'date');
     el.sortAlphaBtn.classList.toggle('active', sortMode === 'alpha');
 
-    // ========================================
-    // GLOBAL HANDLERS
-    // ========================================
     window.copyCodeFromButton = function(btn) {
         const code = btn.closest('.code-block-wrapper').querySelector('pre code').textContent;
         navigator.clipboard.writeText(code).then(() => {
@@ -1277,4 +1283,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.closeModalFromGlobal = function() { document.getElementById('close-modal-btn')?.click(); };
+
+    // Disparamos la carga segura para evitar el parpadeo
+    initApp();
 });
