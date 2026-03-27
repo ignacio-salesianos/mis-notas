@@ -626,8 +626,8 @@ body {
 .note-card {
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 1.5rem;
+    border-radius: 1rem;
+    padding: 1.8rem;
     cursor: pointer;
     transition: transform var(--fast), box-shadow var(--fast), border-color var(--fast), background-color var(--smooth);
     display: flex;
@@ -639,8 +639,8 @@ body {
 }
 .note-card:hover {
     transform: translateY(-4px);
-    box-shadow: var(--shadow-lg);
-    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-color);
 }
 .note-card.pinned {
     border-color: var(--accent);
@@ -1218,115 +1218,6 @@ kbd {
     .color-dot { width: 14px; height: 14px; }
 }
 
-/* ========================================
-   MAGIC AI BUTTONS
-   ======================================== */
-.magic-btn {
-    background: linear-gradient(135deg, rgba(88, 101, 242, 0.1) 0%, rgba(162, 102, 235, 0.1) 100%);
-    color: #a266eb;
-    border: 1px solid rgba(162, 102, 235, 0.3);
-    position: relative;
-    overflow: hidden;
-    transition: all var(--smooth);
-}
-[data-theme="dark"] .magic-btn {
-    color: #c4a1ff;
-    border-color: rgba(162, 102, 235, 0.4);
-    background: linear-gradient(135deg, rgba(88, 101, 242, 0.15) 0%, rgba(162, 102, 235, 0.15) 100%);
-}
-.magic-btn:hover {
-    background: linear-gradient(135deg, rgba(88, 101, 242, 0.2) 0%, rgba(162, 102, 235, 0.2) 100%);
-    border-color: rgba(162, 102, 235, 0.6);
-    box-shadow: 0 0 15px rgba(162, 102, 235, 0.2);
-    transform: translateY(-2px);
-}
-.magic-btn-solid {
-    background: linear-gradient(135deg, #5865f2 0%, #a266eb 100%);
-    color: white !important;
-    border: none;
-    box-shadow: 0 4px 15px rgba(162, 102, 235, 0.3);
-    transition: all var(--smooth);
-}
-.magic-btn-solid:hover {
-    box-shadow: 0 6px 20px rgba(162, 102, 235, 0.5);
-    transform: translateY(-2px);
-}
-.magic-icon {
-    animation: sparkle 2s infinite ease-in-out;
-}
-@keyframes sparkle {
-    0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
-    50% { transform: scale(1.2) rotate(15deg); opacity: 0.8; }
-}
-
-.magic-text-btn {
-    color: #a266eb !important;
-    background: rgba(162, 102, 235, 0.05) !important;
-    border: 1px solid transparent !important;
-    width: auto !important;
-    padding: 0 0.8rem !important;
-}
-[data-theme="dark"] .magic-text-btn {
-    color: #c4a1ff !important;
-    background: rgba(162, 102, 235, 0.1) !important;
-}
-.magic-text-btn:hover {
-    background: rgba(162, 102, 235, 0.15) !important;
-    border-color: rgba(162, 102, 235, 0.3) !important;
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(162, 102, 235, 0.15);
-}
-.magic-text-btn i {
-    animation: pulse-glow 3s infinite ease-in-out;
-}
-
-.ai-toolbar-group {
-    display: flex;
-    align-items: center;
-    background: rgba(162, 102, 235, 0.05);
-    border: 1px solid rgba(162, 102, 235, 0.2);
-    border-radius: 0.5rem;
-    padding: 2px;
-    margin-left: 4px;
-    gap: 2px;
-}
-[data-theme="dark"] .ai-toolbar-group {
-    background: rgba(162, 102, 235, 0.1);
-    border-color: rgba(162, 102, 235, 0.3);
-}
-
-.ai-group-label {
-    color: #a266eb;
-    font-size: 0.8rem;
-    padding: 0 0.4rem;
-    display: flex;
-    align-items: center;
-}
-[data-theme="dark"] .ai-group-label {
-    color: #c4a1ff;
-}
-.ai-group-label i {
-    animation: sparkle 2s infinite ease-in-out;
-}
-
-.magic-icon-btn {
-    color: #a266eb !important;
-    background: transparent !important;
-    width: 28px !important;
-    height: 28px !important;
-    border-radius: 0.3rem !important;
-}
-[data-theme="dark"] .magic-icon-btn {
-    color: #c4a1ff !important;
-}
-.magic-icon-btn:hover {
-    background: rgba(162, 102, 235, 0.15) !important;
-    transform: translateY(-1px);
-}
-@keyframes pulse-glow {
-    0%, 100% { filter: drop-shadow(0 0 2px rgba(162, 102, 235, 0.0)); }
-    50% { filter: drop-shadow(0 0 6px rgba(162, 102, 235, 0.6)); }
-}
 
 /* ========================================
    COLAB & EXTRA STYLES
@@ -1366,10 +1257,6 @@ kbd {
     }
     .mobile-fab:active { transform: scale(.9); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
     .mobile-fab.primary { background: var(--accent); color: var(--accent-text); }
-    .mobile-fab.ai {
-        background: linear-gradient(135deg, #5865f2, #a266eb);
-        color: #fff; font-size: 1.05rem;
-    }
 
     .modal { padding: 0 !important; }
     .modal-content { border-radius: 0 !important; height: 100dvh !important; }

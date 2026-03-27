@@ -117,11 +117,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="main-add-actions" style="display:flex; gap: 0.5rem; align-items: center;">
-                    <button id="add-note-ai-btn" class="btn magic-btn" title="Generar con IA">
-                        <i class="fa-solid fa-wand-magic-sparkles magic-icon"></i>
-                        <span>Generar con IA</span>
-                    </button>
+                <div class="main-add-actions">
                     <button id="add-note-btn" class="btn primary-btn" title="Nueva Nota">
                         <i class="fa-solid fa-plus"></i>
                         <span>Nueva Nota</span>
@@ -209,13 +205,7 @@
                     <button type="button" class="toolbar-btn" data-action="list" title="Lista (- )"><i class="fa-solid fa-list-ul"></i></button>
                     <button type="button" class="toolbar-btn" data-action="checklist" title="Checklist (- [ ])"><i class="fa-solid fa-list-check"></i></button>
                     <button type="button" class="toolbar-btn" data-action="code" title="Código (``` ```)"><i class="fa-solid fa-code"></i></button>
-                    <div class="toolbar-divider" style="width: 1px; height: 20px; background: var(--border-color); margin: 0 4px;"></div>
-                    <div class="ai-toolbar-group">
-                        <span class="ai-group-label" title="Herramientas IA"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-order" title="Ordenar lista (IA)"><i class="fa-solid fa-list-ol"></i></button>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-summarize" title="Resumir nota (IA)"><i class="fa-solid fa-compress"></i></button>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-extend" title="Extender nota (IA)"><i class="fa-solid fa-expand"></i></button>
-                    </div>
+
                 </div>
 
                 <textarea id="note-body-input" class="note-input body-input" placeholder="Comienza a escribir..."></textarea>
@@ -236,24 +226,6 @@
         <i class="fa-solid fa-trash-arrow-up"></i>
         <span id="toast-message">Nota eliminada</span>
         <button id="undo-delete-btn" class="text-btn">Deshacer</button>
-    </div>
-
-    <div id="ai-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content mini">
-            <header class="modal-header">
-                <h3>Generar Nota con IA</h3>
-                <button id="close-ai-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
-            </header>
-            <div class="modal-body">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">¿Sobre qué tema quieres que trate la nota?</p>
-                <textarea id="ai-topic-input" class="note-input body-input" placeholder="Ej: Resumen de la Revolución Francesa..." style="min-height: 100px; margin-bottom: 1rem; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 0.5rem;"></textarea>
-                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-                    <button id="cancel-ai-btn" class="btn">Cancelar</button>
-                    <button id="save-ai-btn" class="btn magic-btn-solid">Generar <i class="fa-solid fa-wand-magic-sparkles magic-icon"></i></button>
-                </div>
-            </div>
-        </div>
     </div>
 
     <div id="folder-modal" class="modal hidden">

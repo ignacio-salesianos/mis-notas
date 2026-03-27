@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
         searchInput: $('#search-input'),
         clearSearch: $('#clear-search'),
         addBtn: $('#add-note-btn'),
-        addAiBtn: $('#add-note-ai-btn'),
         themeToggle: $('#theme-toggle'),
         noteCount: $('#note-count'),
 
@@ -44,7 +43,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tagsInput: $('#note-tags-input'),
         toolbar: $('#note-toolbar'),
         toolbarBtns: $$('.toolbar-btn:not(.ai-btn)'),
-        aiBtns: $$('.ai-btn'),
         bodyInput: $('#note-body-input'),
         previewBody: $('#note-preview'),
         togglePreviewBtn: $('#toggle-preview-btn'),
@@ -87,13 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
         noteFolderSelect: $('#note-folder-select'),
         folderDropdownBtn: $('#folder-dropdown-btn'),
         folderDropdownText: $('#folder-dropdown-text'),
-        folderDropdownMenu: $('#folder-dropdown-menu'),
-
-        aiModal: $('#ai-modal'),
-        closeAiModalBtn: $('#close-ai-modal-btn'),
-        cancelAiBtn: $('#cancel-ai-btn'),
-        saveAiBtn: $('#save-ai-btn'),
-        aiTopicInput: $('#ai-topic-input')
+        folderDropdownMenu: $('#folder-dropdown-menu')
     };
 
     // ========================================
@@ -164,13 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
         fabNew.setAttribute('aria-label', 'Nueva nota');
         fabNew.addEventListener('click', () => openModal());
 
-        const fabAi = document.createElement('button');
-        fabAi.className = 'mobile-fab ai';
-        fabAi.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i>';
-        fabAi.setAttribute('aria-label', 'Generar con IA');
-        fabAi.addEventListener('click', openAiModal);
-
-        group.appendChild(fabAi);
         group.appendChild(fabNew);
         document.body.appendChild(group);
     }
@@ -195,10 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // EVENT LISTENERS
     // ========================================
     el.addBtn.addEventListener('click', () => openModal());
-    el.addAiBtn?.addEventListener('click', openAiModal);
-    el.closeAiModalBtn?.addEventListener('click', () => el.aiModal.classList.add('hidden'));
-    el.cancelAiBtn?.addEventListener('click',     () => el.aiModal.classList.add('hidden'));
-    el.saveAiBtn?.addEventListener('click', handleGenerateAI);
 
     el.themeToggle.addEventListener('click', toggleTheme);
 
@@ -360,7 +341,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
 
     el.toolbarBtns.forEach(btn => btn.addEventListener('click', () => { applyToolbarAction(btn.dataset.action); broadcastContent(); }));
-    el.aiBtns.forEach(btn => btn.addEventListener('click', () => handleAiToolbar(btn.dataset.action)));
 
     el.undoBtn.addEventListener('click', () => {
         if (!deletedNote) return;
@@ -437,59 +417,6 @@ document.addEventListener('DOMContentLoaded', () => {
         el.bodyInput.focus();
         el.bodyInput.selectionStart = el.bodyInput.selectionEnd = cur;
         triggerAutoSave();
-    }
-
-    async function handleAiToolbar(action) {
-        if (!currentNote) return;
-        const s = el.bodyInput.selectionStart, e2 = el.bodyInput.selectionEnd;
-        const full = el.bodyInput.value, sel = full.substring(s, e2), text = sel || full;
-        if (!text.trim()) { showToast('Escribe algo primero'); return; }
-        showToast('Procesando con IA...');
-        const base = 'Responde ÚNICAMENTE con el contenido solicitado. Sin saludos ni bloques de código envolventes.';
-        const prompts = {
-            'ai-order':     `Organiza el siguiente texto en una lista de puntos clave. ${base}:\n\n${text}`,
-            'ai-summarize': `Resume este texto de forma concisa. ${base}:\n\n${text}`,
-            'ai-extend':    `Extiende y desarrolla esta idea con contexto y ejemplos. ${base}:\n\n${text}`
-        };
-        const result = await generateAIContent(prompts[action]);
-        if (result) {
-            el.bodyInput.value = sel ? full.substring(0, s) + result + full.substring(e2) : result;
-            triggerAutoSave(); updateCounts(); broadcastContent(); hideToast();
-        } else { showToast('Error con la IA'); }
-    }
-
-    function openAiModal() {
-        el.aiTopicInput.value = '';
-        el.aiModal.classList.remove('hidden');
-        setTimeout(() => el.aiTopicInput.focus(), 50);
-    }
-
-    async function handleGenerateAI() {
-        const topic = el.aiTopicInput.value.trim();
-        if (!topic) return;
-        el.saveAiBtn.disabled = true;
-        el.saveAiBtn.innerHTML = 'Generando... <i class="fa-solid fa-spinner fa-spin"></i>';
-        showToast('Generando nota...');
-
-        const content = await generateAIContent(
-            `Crea una nota clara y estructurada sobre: ${topic}. Responde ÚNICAMENTE con el contenido. Sin saludos ni bloques de código markdown. Usa markdown pero SIN título h1 al inicio.`
-        );
-        if (content) {
-            const newNote = {
-                id: generateId(), title: topic.charAt(0).toUpperCase() + topic.slice(1),
-                tags: ['IA'], body: content, pinned: false, color: 'default',
-                folder_id: activeFilter !== 'all' && activeFilter !== 'shared' ? activeFilter : null,
-                createdAt: Date.now(), updatedAt: Date.now()
-            };
-            notes.push(newNote); saveToStorage();
-            if (currentUser) syncNoteToSupabase(newNote);
-            renderNotes(el.searchInput.value, true);
-            hideToast(); el.aiModal.classList.add('hidden');
-            openModal(newNote);
-        } else { showToast('Error al generar la nota'); }
-
-        el.saveAiBtn.disabled = false;
-        el.saveAiBtn.innerHTML = 'Generar <i class="fa-solid fa-wand-magic-sparkles"></i>';
     }
 
     // ========================================
@@ -1243,22 +1170,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateId() {
         return crypto.randomUUID?.() || `n_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
-    }
-
-    async function generateAIContent(prompt) {
-        try {
-            const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            if (data.text) {
-                let r = data.text.trim();
-                if (r.startsWith('```markdown')) r = r.slice(11).trim();
-                else if (r.startsWith('```')) r = r.slice(3).trim();
-                if (r.endsWith('```')) r = r.slice(0,-3).trim();
-                return r;
-            }
-            throw new Error('No content');
-        } catch(e) { console.error('AI:', e); return null; }
     }
 
     // ========================================
