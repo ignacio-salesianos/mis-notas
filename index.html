@@ -2,8 +2,9 @@
 <html lang="es" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Minimal Notes</title>
+    <meta name="description" content="Aplicación minimalista de notas con soporte markdown y sincronización en la nube.">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -14,141 +15,113 @@
 </head>
 <body>
     <div class="app-layout">
-        <aside id="sidebar" class="sidebar">
-            <div class="sidebar-header">
-                <i class="fa-solid fa-feather-pointed"></i>
-                <h2>Notas</h2>
-            </div>
-            
-            <div class="sidebar-content">
-                <div class="sidebar-nav">
-                    <button class="nav-item active" id="nav-all-notes">
-                        <i class="fa-solid fa-layer-group"></i>
-                        <span>Todas mis notas</span>
-                    </button>
-                    <button class="nav-item hidden" id="nav-shared-notes">
-                        <i class="fa-solid fa-users"></i>
-                        <span>Compartidas conmigo</span>
-                    </button>
+        <div class="app-container">
+            <header class="app-header">
+                <div class="header-left">
+                    <div id="breadcrumbs" class="breadcrumbs">
+                        <span class="breadcrumb-item active" data-view="root">Mis Notas</span>
+                    </div>
+                    <span id="note-count" class="note-count hidden">0</span>
                 </div>
                 
-                <div class="sidebar-section auth-required hidden" id="folders-section">
-                    <div class="section-header">
-                        <h3>MIS CARPETAS</h3>
-                        <button id="add-folder-btn" class="icon-btn small" aria-label="Nueva carpeta" title="Añadir carpeta">
-                            <i class="fa-solid fa-plus"></i>
+                <div class="header-actions">
+                    <div class="search-bar">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="search-input" placeholder="Buscar..." autocomplete="off">
+                        <button id="clear-search" class="clear-search hidden" aria-label="Limpiar búsqueda">
+                            <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
-                    <ul class="folder-list" id="folder-list">
-                        </ul>
-                </div>
-            </div>
-        </aside>
 
-        <div class="app-container">
-        <header class="app-header">
-            <div class="logo-mobile">
-                <button id="mobile-menu-btn" class="icon-btn" aria-label="Abrir menú">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
-                <span id="header-title">Todas mis notas</span>
-                <span id="note-count" class="note-count">0</span>
-            </div>
-            
-            <div class="header-actions">
-                <div class="search-bar">
-                    <i class="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" id="search-input" placeholder="Buscar..." autocomplete="off">
-                    <button id="clear-search" class="clear-search hidden" aria-label="Limpiar busqueda">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-
-                <div id="sync-status" class="sync-status hidden" title="Sincronizando con la nube">
-                    <i class="fa-solid fa-cloud-arrow-up fa-fade"></i>
-                </div>
-
-                <div class="dropdown">
-                    <button id="menu-btn" class="icon-btn" aria-label="Menu">
-                        <i class="fa-solid fa-ellipsis-vertical"></i>
-                    </button>
-                    <div id="dropdown-menu" class="dropdown-menu hidden">
-                        <button id="export-btn" class="dropdown-item">
-                            <i class="fa-solid fa-download"></i> Exportar notas
+                    <div class="dropdown">
+                        <button id="menu-btn" class="icon-btn" aria-label="Menú">
+                            <i class="fa-solid fa-ellipsis-vertical"></i>
                         </button>
-                        <button id="import-btn" class="dropdown-item">
-                            <i class="fa-solid fa-upload"></i> Importar notas
-                        </button>
-                        <div class="dropdown-divider"></div>
-                        <button id="sort-date-btn" class="dropdown-item active">
-                            <i class="fa-solid fa-clock"></i> Ordenar por fecha
-                        </button>
-                        <button id="sort-alpha-btn" class="dropdown-item">
-                            <i class="fa-solid fa-arrow-down-a-z"></i> Ordenar A-Z
-                        </button>
-                    </div>
-                </div>
-
-                <input type="file" id="import-file" accept=".json" style="display:none">
-
-                <button id="theme-toggle" class="icon-btn" aria-label="Cambiar tema">
-                    <i class="fa-solid fa-sun"></i>
-                </button>
-                <div id="auth-container" class="auth-container">
-                    <button id="login-google-btn" class="btn google-btn">
-                        <i class="fa-brands fa-google"></i>
-                        <span>Acceder</span>
-                    </button>
-                    
-                    <div class="dropdown" id="user-profile-container">
-                        <div id="user-profile" class="user-profile hidden" aria-label="Perfil de usuario">
-                            <img id="user-avatar" src="" alt="Avatar" class="user-avatar">
-                            <span id="user-name" class="user-name">Usuario</span>
-                        </div>
-                        
-                        <div id="user-dropdown-menu" class="user-dropdown">
-                            <div class="user-info-header">
-                                <strong id="dropdown-user-name">Usuario</strong>
-                                <small id="dropdown-user-email">correo@ejemplo.com</small>
-                            </div>
-                            <button id="logout-btn" class="dropdown-item text-danger">
-                                <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
+                        <div id="dropdown-menu" class="dropdown-menu hidden">
+                            <button id="export-btn" class="dropdown-item">
+                                <i class="fa-solid fa-download"></i> Exportar notas
+                            </button>
+                            <button id="import-btn" class="dropdown-item">
+                                <i class="fa-solid fa-upload"></i> Importar notas
+                            </button>
+                            <div class="dropdown-divider"></div>
+                            <button id="sort-date-btn" class="dropdown-item active">
+                                <i class="fa-solid fa-clock"></i> Ordenar por fecha
+                            </button>
+                            <button id="sort-alpha-btn" class="dropdown-item">
+                                <i class="fa-solid fa-arrow-down-a-z"></i> Ordenar A-Z
                             </button>
                         </div>
                     </div>
-                </div>
-                <div class="main-add-actions" style="display:flex; gap: 0.5rem; align-items: center;">
-                    <button id="add-note-ai-btn" class="btn magic-btn" title="Generar con IA">
-                        <i class="fa-solid fa-wand-magic-sparkles magic-icon"></i>
-                        <span>Generar con IA</span>
+
+                    <input type="file" id="import-file" accept=".json" style="display:none">
+
+                    <button id="theme-toggle" class="icon-btn" aria-label="Cambiar tema">
+                        <i class="fa-solid fa-sun"></i>
                     </button>
-                    <button id="add-note-btn" class="btn primary-btn" title="Nueva Nota">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Nueva Nota</span>
-                    </button>
+                    
+                    <div id="auth-container" class="auth-container">
+                        <button id="login-google-btn" class="btn google-btn">
+                            <i class="brands fa-google"></i>
+                            <span>Acceder</span>
+                        </button>
+                        
+                        <div class="dropdown" id="user-profile-container">
+                            <div id="user-profile" class="user-profile hidden" aria-label="Perfil de usuario">
+                                <img id="user-avatar" src="" alt="Avatar" class="user-avatar">
+                                <span id="user-name" class="user-name">Usuario</span>
+                            </div>
+                            
+                            <div id="user-dropdown-menu" class="user-dropdown hidden">
+                                <div class="user-info-header">
+                                    <strong id="dropdown-user-name">Usuario</strong>
+                                    <small id="dropdown-user-email">correo@ejemplo.com</small>
+                                </div>
+                                <button id="logout-btn" class="dropdown-item text-danger">
+                                    <i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="main-add-actions">
+                        <button id="add-folder-btn" class="btn icon-btn folder-add-btn" title="Nueva Carpeta">
+                            <i class="fa-solid fa-folder-plus"></i>
+                        </button>
+                        <button id="add-note-btn" class="btn primary-btn" title="Nueva Nota">
+                            <i class="fa-solid fa-plus"></i>
+                            <span class="btn-text">Nueva Nota</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
-        </header>
+            </header>
 
-        <main>
-            <div id="empty-state" class="empty-state hidden">
-                <i class="fa-regular fa-note-sticky"></i>
-                <h2>Tu mente esta en blanco</h2>
-            </div>
+            <main>
+                <div id="empty-state" class="empty-state hidden">
+                    <div class="empty-state-icon">
+                        <i class="fa-regular fa-folder-open"></i>
+                    </div>
+                    <h2>Tu espacio está vacío</h2>
+                    <p>Crea tu primera nota o carpeta para empezar.</p>
+                </div>
 
-            <div id="no-results" class="empty-state hidden">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <h2>Sin resultados</h2>
-                <p>No se encontraron notas con ese termino.</p>
-            </div>
-            
-            <div id="notes-grid" class="notes-grid"></div>
-        </main>
+                <div id="no-results" class="empty-state hidden">
+                    <div class="empty-state-icon">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </div>
+                    <h2>Sin resultados</h2>
+                    <p>No se encontraron elementos con ese término.</p>
+                </div>
+                
+                <div id="main-grid" class="main-grid"></div>
+            </main>
 
-        <footer class="app-footer">
-        </footer>
+            <footer class="app-footer">
+            </footer>
+        </div>
     </div>
-    </div> <div id="note-modal" class="modal hidden">
+
+    <div id="note-modal" class="modal hidden">
         <div class="modal-backdrop"></div>
         <div class="modal-content">
             <header class="modal-header">
@@ -166,7 +139,7 @@
                     </div>
                 </div>
                 <div class="modal-actions-right">
-                    <div class="dropdown hidden" id="note-folder-selector" title="Mover a carpeta" style="margin-right: 0.5rem;">
+                    <div class="dropdown hidden" id="note-folder-selector" title="Mover a carpeta">
                         <button id="folder-dropdown-btn" class="folder-dropdown-btn">
                             <i class="fa-regular fa-folder" style="font-size: 0.85rem"></i>
                             <span id="folder-dropdown-text">Sin carpeta</span>
@@ -203,19 +176,12 @@
                 </div>
                 
                 <div class="minimal-toolbar" id="note-toolbar">
-                    <button type="button" class="toolbar-btn" data-action="bold" title="Negrita (**)**"><i class="fa-solid fa-bold"></i></button>
+                    <button type="button" class="toolbar-btn" data-action="bold" title="Negrita (**)"><i class="fa-solid fa-bold"></i></button>
                     <button type="button" class="toolbar-btn" data-action="italic" title="Cursiva (* *)"><i class="fa-solid fa-italic"></i></button>
                     <button type="button" class="toolbar-btn" data-action="strikethrough" title="Tachado (~~ ~~)"><i class="fa-solid fa-strikethrough"></i></button>
                     <button type="button" class="toolbar-btn" data-action="list" title="Lista (- )"><i class="fa-solid fa-list-ul"></i></button>
                     <button type="button" class="toolbar-btn" data-action="checklist" title="Checklist (- [ ])"><i class="fa-solid fa-list-check"></i></button>
                     <button type="button" class="toolbar-btn" data-action="code" title="Código (``` ```)"><i class="fa-solid fa-code"></i></button>
-                    <div class="toolbar-divider" style="width: 1px; height: 20px; background: var(--border-color); margin: 0 4px;"></div>
-                    <div class="ai-toolbar-group">
-                        <span class="ai-group-label" title="Herramientas IA"><i class="fa-solid fa-wand-magic-sparkles"></i></span>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-order" title="Ordenar lista (IA)"><i class="fa-solid fa-list-ol"></i></button>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-summarize" title="Resumir nota (IA)"><i class="fa-solid fa-compress"></i></button>
-                        <button type="button" class="toolbar-btn ai-btn magic-icon-btn" data-action="ai-extend" title="Extender nota (IA)"><i class="fa-solid fa-expand"></i></button>
-                    </div>
                 </div>
 
                 <textarea id="note-body-input" class="note-input body-input" placeholder="Comienza a escribir..."></textarea>
@@ -233,27 +199,9 @@
     </div>
 
     <div id="toast" class="toast hidden">
-        <i class="fa-solid fa-trash-arrow-up"></i>
-        <span id="toast-message">Nota eliminada</span>
-        <button id="undo-delete-btn" class="text-btn">Deshacer</button>
-    </div>
-
-    <div id="ai-modal" class="modal hidden">
-        <div class="modal-backdrop"></div>
-        <div class="modal-content mini">
-            <header class="modal-header">
-                <h3>Generar Nota con IA</h3>
-                <button id="close-ai-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
-            </header>
-            <div class="modal-body">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">¿Sobre qué tema quieres que trate la nota?</p>
-                <textarea id="ai-topic-input" class="note-input body-input" placeholder="Ej: Resumen de la Revolución Francesa..." style="min-height: 100px; margin-bottom: 1rem; border: 1px solid var(--border-color); padding: 0.5rem; border-radius: 0.5rem;"></textarea>
-                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-                    <button id="cancel-ai-btn" class="btn">Cancelar</button>
-                    <button id="save-ai-btn" class="btn magic-btn-solid">Generar <i class="fa-solid fa-wand-magic-sparkles magic-icon"></i></button>
-                </div>
-            </div>
-        </div>
+        <i class="fa-solid fa-circle-info"></i>
+        <span id="toast-message">Notificación</span>
+        <button id="undo-delete-btn" class="text-btn hidden">Deshacer</button>
     </div>
 
     <div id="folder-modal" class="modal hidden">
@@ -264,8 +212,8 @@
                 <button id="close-folder-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </header>
             <div class="modal-body">
-                <input type="text" id="folder-name-input" class="note-input" placeholder="Nombre de la carpeta" autocomplete="off" maxlength="50" style="font-size: 1.1rem; padding: 0.5rem; width: 100%; border-bottom: 2px solid var(--border-color); margin-bottom: 1rem;">
-                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                <input type="text" id="folder-name-input" class="note-input folder-name-field" placeholder="Nombre de la carpeta" autocomplete="off" maxlength="50">
+                <div class="modal-actions-bar">
                     <button id="cancel-folder-btn" class="btn">Cancelar</button>
                     <button id="save-folder-btn" class="btn primary-btn">Crear</button>
                 </div>
@@ -281,14 +229,14 @@
                 <button id="close-share-modal-btn" class="icon-btn" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </header>
             <div class="modal-body">
-                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Introduce el email del usuario con el que quieres compartir esta carpeta. Ellos también la verán en su cuenta con permisos de lectura y escritura.</p>
-                <input type="email" id="share-email-input" class="note-input" placeholder="usuario@email.com" autocomplete="off" style="font-size: 1.1rem; padding: 0.5rem; width: 100%; border-bottom: 2px solid var(--border-color); margin-bottom: 1rem;">
-                <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+                <p class="modal-description">Introduce el email del usuario con el que quieres compartir esta carpeta.</p>
+                <input type="email" id="share-email-input" class="note-input folder-name-field" placeholder="usuario@email.com" autocomplete="off">
+                <div class="modal-actions-bar">
                     <button id="cancel-share-btn" class="btn">Cancelar</button>
                     <button id="save-share-btn" class="btn primary-btn">Compartir</button>
                 </div>
                 
-                <div id="shared-users-list" style="margin-top: 1.5rem; max-height: 150px; overflow-y: auto;">
+                <div id="shared-users-list" class="shared-users-list">
                     </div>
             </div>
         </div>
